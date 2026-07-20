@@ -1,0 +1,4 @@
+/.idea/
+/vendor/
+/config.dev.yaml
+/config.prod.yaml

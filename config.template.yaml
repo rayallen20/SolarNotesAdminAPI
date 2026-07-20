@@ -1,0 +1,22 @@
+# 数据库相关配置
+database:
+  # 服务端地址
+  domain:
+  # 端口
+  port:
+  # 用户名
+  user:
+  # 密码
+  password:
+  # 库名
+  name:
+
+# 资产相关配置
+asset:
+  # 资产URL基地址
+  base_url:
+
+# 存储相关配置
+storage:
+  # 文件系统上的存储根路径(绝对路径,不含尾部/)
+  root_dir:
