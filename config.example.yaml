@@ -1,7 +1,7 @@
 # 数据库相关配置
 database:
   # 服务端地址
-  domain:
+  host:
   # 端口
   port:
   # 用户名

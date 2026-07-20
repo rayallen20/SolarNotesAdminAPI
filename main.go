@@ -2,6 +2,7 @@ package main
 
 import (
 	"SolarNotesAdminAPI/conf"
+	"fmt"
 	"log"
 )
 
@@ -11,4 +12,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	fmt.Printf("%+v\n", config)
 }
