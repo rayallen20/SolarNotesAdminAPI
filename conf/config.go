@@ -104,7 +104,7 @@ func (c *Config) checkDatabase() error {
 	}
 
 	if c.Database.Name == "" {
-		emptyKeys = append(emptyKeys, "configFileName")
+		emptyKeys = append(emptyKeys, "name")
 	}
 
 	if len(emptyKeys) > 0 {

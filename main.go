@@ -2,7 +2,7 @@ package main
 
 import (
 	"SolarNotesAdminAPI/conf"
-	"fmt"
+	"SolarNotesAdminAPI/db"
 	"log"
 )
 
@@ -13,5 +13,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("%+v\n", config)
+	err = db.Connect(config.Database)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
