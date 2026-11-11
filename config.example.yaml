@@ -1,3 +1,19 @@
+# 服务相关配置
+service:
+  # 服务端口
+  port:
+  # 可信代理 IP 或 CIDR 列表
+  trusted_proxies:
+    -
+  # 读取请求头的最长时间.单位: 秒
+  read_header_timeout_seconds:
+  # 读取整个请求(包括请求体)的最长时间.单位: 秒
+  read_timeout_seconds:
+  # 保持连接时,等待下一个请求的最长空闲时间.单位: 秒
+  idle_timeout_seconds:
+  # 所有 API 请求体的大小上限.单位: 字节
+  max_request_body_bytes:
+
 # 数据库相关配置
 database:
   # 服务端地址
@@ -11,6 +27,17 @@ database:
   # 库名
   name:
 
+# JWT相关配置
+jwt:
+  # 签发者(解析时要求与此签发方匹配)
+  issuer:
+  # 受众(解析时要求与此受众匹配)
+  audience:
+  # 过期时间(单位:秒)
+  expire_seconds:
+  # 32个随机字节的Base64编码字符串,用于签名和验签JWT
+  secret:
+
 # 资产相关配置
 asset:
   # 资产URL基地址
@@ -20,3 +47,7 @@ asset:
 storage:
   # 文件系统上的存储根路径(绝对路径,不含尾部/)
   root_dir:
+# 雪花发号器相关配置
+snowflake:
+  # 节点ID 取值范围: [1, 1023]
+  node_id:

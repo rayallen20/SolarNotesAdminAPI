@@ -3,7 +3,6 @@ package conf
 import (
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,15 +10,39 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// Config 配置对象
-type Config struct {
-	Database Database `yaml:"database"`
-	Asset    Asset    `yaml:"asset"`
-	Storage  Storage  `yaml:"storage"`
+// loaded 包级别配置实例, Load 函数调用成功后持有
+var loaded *Config
+
+// Load 本函数用于加载配置文件并持有为包级别实例 服务启动时调用1次即可
+func Load() error {
+	c := &Config{}
+
+	err := c.load()
+	if err != nil {
+		return err
+	}
+
+	loaded = c
+	return nil
 }
 
-// Load 本方法用于加载配置文件至 Config 实例
-func (c *Config) Load() error {
+// Get 本函数用于获取已加载的配置实例 (在 Load 函数调用成功后调用,否则获取到的实例为nil)
+func Get() *Config {
+	return loaded
+}
+
+// Config 配置对象
+type Config struct {
+	Service   Service   `yaml:"service"`
+	Database  Database  `yaml:"database"`
+	JWT       JWT       `yaml:"jwt"`
+	Asset     Asset     `yaml:"asset"`
+	Storage   Storage   `yaml:"storage"`
+	Snowflake Snowflake `yaml:"snowflake"`
+}
+
+// load 本方法用于加载配置文件至 Config 实例
+func (c *Config) load() error {
 	// 根据环境确认配置文件名
 	err := resolveConfigFileName()
 	if err != nil {
@@ -62,77 +85,35 @@ func (c *Config) bind() error {
 }
 
 // validate 本方法用于检查配置文件中的配置项值是否合法
-// 1. 检查 database 部分是否有空项
-// 2. 检查 asset.base_url 是否为合法的URL
-// 3. 检查 storage.root_dir 是否为绝对路径
 func (c *Config) validate() error {
-	err := c.checkDatabase()
+	err := c.Service.validate()
 	if err != nil {
 		return err
 	}
 
-	err = c.checkAsset()
+	err = c.Database.validate()
 	if err != nil {
 		return err
 	}
 
-	err = c.checkStorage()
+	err = c.JWT.validate()
 	if err != nil {
 		return err
 	}
 
-	return nil
-}
-
-// checkDatabase 本方法用于检查配置文件中的 database 部分是否有空项
-func (c *Config) checkDatabase() error {
-	var emptyKeys []string
-	if c.Database.Host == "" {
-		emptyKeys = append(emptyKeys, "host")
-	}
-
-	if c.Database.Port == "" {
-		emptyKeys = append(emptyKeys, "port")
-	}
-
-	if c.Database.User == "" {
-		emptyKeys = append(emptyKeys, "user")
-	}
-
-	if c.Database.Password == "" {
-		emptyKeys = append(emptyKeys, "password")
-	}
-
-	if c.Database.Name == "" {
-		emptyKeys = append(emptyKeys, "name")
-	}
-
-	if len(emptyKeys) > 0 {
-		return fmt.Errorf("database 配置存在空项: %v", emptyKeys)
-	}
-
-	return nil
-}
-
-// checkAsset 本方法用于检查配置文件中的 asset.base_url 配置项是否为合法的URL
-func (c *Config) checkAsset() error {
-	assetBaseURL, err := url.Parse(c.Asset.BaseURL)
+	err = c.Asset.validate()
 	if err != nil {
-		return fmt.Errorf("asset.base_url 解析失败: %w", err)
+		return err
 	}
 
-	if assetBaseURL.Scheme == "" || assetBaseURL.Host == "" {
-		return fmt.Errorf("asset.base_url 必须为含协议和主机的完整URL, 当前值: %q", c.Asset.BaseURL)
+	err = c.Storage.validate()
+	if err != nil {
+		return err
 	}
 
-	return nil
-}
-
-// checkStorage 本方法用于检查配置文件中的 storage.root_dir 配置项是否为绝对路径
-func (c *Config) checkStorage() error {
-	isAbs := filepath.IsAbs(c.Storage.RootDir)
-	if !isAbs {
-		return fmt.Errorf("storage.root_dir 必须为绝对路径, 当前值: %q", c.Storage.RootDir)
+	err = c.Snowflake.validate()
+	if err != nil {
+		return err
 	}
 
 	return nil

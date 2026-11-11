@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="SolarNotesAdminAPI 登录功能代码实现文档：完整 Go 文件、配置追加、JWT 工具、业务与控制器实现和临时副本验证结果。">
+<title>登录功能 · 代码实现文档 · Solar Notes</title><style>
+    :root { color-scheme: light; --paper: #f6f5f0; --card: #fffefa; --ink: #202e2a; --muted: #5b6963; --line: #dce2d8; --green: #24644c; --green-soft: #e9f1e8; --blue: #285e84; --blue-soft: #e7f0f6; --amber: #79520d; --amber-soft: #fff4dc; --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 26px; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font: 16px/1.85 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    a { color: var(--green); text-underline-offset: 4px; overflow-wrap: anywhere; }
+    a:hover { color: #103f2e; }
+    :focus-visible { outline: 3px solid var(--blue); outline-offset: 4px; }
+    [hidden] { display: none !important; }
+    .skip { position: absolute; top: -80px; left: 20px; z-index: 3; padding: 10px 18px; background: var(--card); }
+    .skip:focus { top: 12px; }
+    .page { width: min(1320px, 100%); margin: auto; display: grid; grid-template-columns: 228px minmax(0, 1fr); gap: 54px; padding: 42px 38px 80px; }
+    .sidebar { position: sticky; top: 28px; align-self: start; max-height: calc(100vh - 56px); overflow-y: auto; }
+    .brand { font-weight: 800; letter-spacing: .1em; font-size: 12px; color: var(--green); }
+    .brand-mark { display: inline-block; width: 13px; height: 13px; border: 3px solid var(--green); border-radius: 50%; margin-right: 8px; vertical-align: -1px; }
+    .sidebar p { color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .sidebar nav { margin-top: 25px; display: grid; gap: 3px; }
+    .sidebar nav a { display: flex; gap: 12px; text-decoration: none; padding: 7px 9px; border-radius: 7px; color: var(--muted); font-size: 14px; }
+    .sidebar nav a:hover { background: var(--green-soft); color: var(--green); }
+    .sidebar nav span { color: var(--green); font: 12px/2 var(--mono); }
+    .side-note { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 24px; }
+    main { min-width: 0; }
+    .eyebrow { color: var(--green); font-size: 12px; letter-spacing: .14em; font-weight: 700; }
+    h1 { font-size: clamp(32px, 4vw, 47px); line-height: 1.3; letter-spacing: -.035em; margin: 15px 0 19px; }
+    .lede { color: var(--muted); font-size: 18px; max-width: 770px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 9px; margin: 24px 0; }
+    .tag { font-size: 12px; border: 1px solid var(--line); border-radius: 30px; padding: 3px 11px; color: var(--muted); background: var(--card); }
+    .tag.review { color: var(--blue); background: var(--blue-soft); border-color: #c4d8e6; }
+    .thesis { padding: 22px 25px; background: var(--green); color: #fff; border-radius: 14px; font-size: 17px; }
+    .thesis p { margin: 0; }
+    section { padding-top: 43px; margin-top: 12px; }
+    .section-label { color: var(--green); font: 12px/1.5 var(--mono); letter-spacing: .1em; }
+    h2 { font-size: 27px; line-height: 1.45; margin: 8px 0 20px; letter-spacing: -.02em; }
+    h3 { font-size: 19px; line-height: 1.55; margin: 26px 0 10px; }
+    p { margin: 12px 0; }
+    code { font: .87em/1.7 var(--mono); background: #eaf0e7; border-radius: 4px; padding: 2px 5px; overflow-wrap: anywhere; }
+    pre { margin: 14px 0; padding: 20px 23px; background: #1e2d29; color: #e7efe6; border-radius: 10px; overflow-x: auto; tab-size: 2; font: 13px/1.8 var(--mono); }
+    pre code { font: inherit; background: transparent; color: inherit; padding: 0; border-radius: 0; overflow-wrap: normal; }
+    .code-label { margin-top: 20px; font: 12px/1.7 var(--mono); color: var(--muted); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 18px 0; }
+    .card { padding: 19px 21px; border: 1px solid var(--line); background: var(--card); border-radius: 13px; min-width: 0; }
+    .card h3 { margin: 0 0 8px; font-size: 17px; }
+    .card p { margin: 0; color: var(--muted); font-size: 14px; }
+    .note { padding: 16px 20px; border-left: 3px solid var(--green); background: var(--green-soft); margin: 20px 0; border-radius: 0 9px 9px 0; font-size: 14px; }
+    .note.proposal { background: var(--blue-soft); border-color: var(--blue); }
+    .note.amber { background: var(--amber-soft); border-color: var(--amber); }
+    .note p { margin: 0; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; margin: 18px 0; background: var(--card); }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    th, td { text-align: left; vertical-align: top; padding: 12px 15px; border-bottom: 1px solid var(--line); min-width: 115px; }
+    th { color: var(--green); font-weight: 650; background: #edf2e9; }
+    tr:last-child td { border-bottom: 0; }
+    ol, ul { padding-left: 23px; }
+    li { margin: 8px 0; }
+    .small, figcaption { color: var(--muted); font-size: 13px; }
+    .ref { font-size: 12px; white-space: nowrap; margin-left: 5px; }
+    figure { margin: 20px 0; }
+    .diagram { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 13px; padding: 17px 9px; }
+    .diagram svg { display: block; width: 100%; min-width: 850px; height: auto; }
+    .endpoint { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; }
+    .method { font: 700 13px/1.8 var(--mono); color: var(--green); background: var(--green-soft); border-radius: 5px; padding: 3px 10px; }
+    .endpoint code { background: transparent; padding: 0; font-size: 16px; }
+    .preview { border: 1px solid var(--line); border-radius: 12px; padding: 20px; background: var(--card); margin: 20px 0; }
+    .preview-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    select { font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 7px; padding: 8px 32px 8px 11px; max-width: 100%; }
+    .badge { color: var(--blue); background: var(--blue-soft); border-radius: 20px; padding: 3px 10px; font: 12px/1.8 var(--mono); }
+    details { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 14px 19px; margin: 12px 0; }
+    summary { cursor: pointer; font-weight: 650; }
+    details p { font-size: 14px; }
+    .review-list li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .review-list li:last-child { border: 0; }
+    footer { margin-top: 42px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    @media (max-width: 1050px) { .page { gap: 28px; padding-left: 24px; padding-right: 24px; grid-template-columns: 185px minmax(0, 1fr); } }
+    @media (max-width: 800px) {
+      .page { display: block; padding: 24px 20px 55px; }
+      .sidebar { position: static; max-height: none; margin-bottom: 34px; }
+      .sidebar nav { display: flex; gap: 5px; overflow-x: auto; margin-top: 15px; padding-bottom: 8px; }
+      .sidebar nav a { white-space: nowrap; padding: 5px 9px; border: 1px solid var(--line); }
+      .sidebar p, .side-note { display: none; }
+      h2 { font-size: 24px; }
+    }
+    @media (max-width: 520px) {
+      .grid { grid-template-columns: 1fr; }
+      .thesis { font-size: 16px; padding: 18px; }
+      pre { padding: 16px; font-size: 12px; }
+      th, td { padding: 10px 12px; }
+      .preview { padding: 15px; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    @media print {
+      body { background: white; color: black; font-size: 11pt; }
+      .page { display: block; padding: 0; width: 100%; }
+      .sidebar, .skip, #response-preview { display: none !important; }
+      section { padding-top: 20px; }
+      .thesis { background: #eee; color: black; }
+      pre { background: #f3f3f3; color: black; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 9pt; }
+      .diagram svg { min-width: 0; }
+      .table-wrap, .diagram { overflow: visible; }
+      tr, .card { break-inside: avoid; }
+      a { color: black; }
+    }
+  
+    .page-tools { display:flex; flex-wrap:wrap; gap:9px; align-items:center; margin:20px 0; }
+    .page-tools button, .code-toolbar button { font:inherit; font-size:13px; border:1px solid var(--green); border-radius:7px; background:var(--card); color:var(--green); cursor:pointer; padding:6px 12px; }
+    .code-file { padding:0; overflow:hidden; margin:18px 0; }
+    .code-file summary { padding:14px 17px; line-height:1.7; overflow-wrap:anywhere; }
+    .file-mode { display:inline-block; font-size:11px; padding:2px 7px; border-radius:5px; background:var(--green-soft); color:var(--green); margin-right:9px; font-weight:500; }
+    .file-path { background:transparent; font-size:13px; padding:0; }
+    .code-toolbar { display:flex; align-items:center; gap:10px; padding:9px 16px; border-top:1px solid var(--line); }
+    .code-file pre { margin:0; border-radius:0; font-size:12.5px; }
+    .copy-feedback { color:var(--muted); font-size:12px; }
+    @media print { .page-tools,.code-toolbar { display:none !important; } .code-file { overflow:visible; } .code-file pre { font-size:8.5pt; } }
+</style></head>
+<body><a class="skip" href="#content">跳到正文</a><div class="page">
+<aside class="sidebar" aria-label="文档导航"><div class="brand"><span class="brand-mark" aria-hidden="true"></span>SOLAR NOTES / DOCS</div>
+<p>按已确认的设计，把实现落实到文件、函数和错误分支。</p><nav aria-label="目录"><a href="#overview"><span>01</span>文档用法与接口</a><a href="#configuration"><span>02</span>依赖与配置</a><a href="#hashing"><span>03</span>摘要工具</a><a href="#jwt"><span>04</span>JWT 工具</a><a href="#model"><span>05</span>模型层实现</a><a href="#validation"><span>06</span>自定义参数校验</a><a href="#biz"><span>07</span>业务层实现</a><a href="#response"><span>08</span>响应 DTO 与包装</a><a href="#controller"><span>09</span>控制器实现</a><a href="#startup"><span>10</span>日志与启动流程</a><a href="#authentication"><span>11</span>后续鉴权衔接</a><a href="#verification"><span>12</span>测试与联调</a><a href="#handoff"><span>13</span>落地清单与依据</a></nav>
+<p class="side-note">代码参考 · 2026-11-09<br>离线可读 · 可复制代码<br><a href="admin-login-design.html">返回已确认方案 ↗</a></p></aside>
+<main id="content"><header><div class="eyebrow">CODE IMPLEMENTATION GUIDE / ADMIN LOGIN</div>
+<h1>登录功能<br>代码实现文档</h1><p class="lede">从启动配置到最终响应，逐文件给出管理员登录代码，说明每一层如何连接，以及哪些行为仍需后续真实数据库联调。</p>
+<div class="meta"><span class="tag review">承接已确认方案</span><span class="tag">完整文件 + 局部追加</span><span class="tag">HTTP 200 + 业务码</span><span class="tag">当前仅交付 HTML</span></div>
+<div class="thesis"><p>Controller 把完整 LoginReq 交给 Biz。Biz 验证密码、签发 JWT 并成功保存其摘要，再将登录信息写入业务实体；Controller 读取该实体并构造 data.admin，内部只有 id、username、access_token。</p></div>
+<div class="page-tools"><button type="button" id="expand-all" hidden>展开全部代码</button><button type="button" id="collapse-all" hidden>折叠全部代码</button><span class="small">每个文件也可单独展开、折叠和复制。</span></div>
+<noscript><p class="small">未启用 JavaScript，仍可使用原生折叠区域阅读并手动复制；启用后可一键复制或展开全部代码。</p></noscript>
+</header><section id="overview" aria-labelledby="overview-title"><div class="section-label">01 / IMPLEMENTATION</div><h2 id="overview-title">先明确这份文档如何使用</h2>
+<p>代码示例中的声明已补充中文注释，覆盖用途、参数、返回值和关键约束；沿用文件的展示也带阅读注释。实际工程文件不随本文修改。</p>
+<p>本文承接 <a href="admin-login-design.html">已确认的登录功能实现方案</a>，给出可相互配合的完整 Go 文件、必要的配置追加片段和测试示例。代码适配当前模块名 <code>SolarNotesAdminAPI</code>、Go 1.25、Gin 与 GORM；本轮实际交付仍然只有 HTML 文档。</p>
+<div class="table-wrap"><table><thead><tr><th>标记</th><th>后续实施时的使用方式</th></tr></thead><tbody>
+<tr><td>新增完整文件</td><td>按显示路径创建文件，包含 package、import 与完整实现。</td></tr>
+<tr><td>替换完整文件</td><td>展示对应文件的完整参考实现；合并时保留届时新增的其他功能。</td></tr>
+<tr><td>局部追加</td><td>只加到指定位置，不用片段覆盖整个文件。</td></tr>
+<tr><td>沿用现有文件</td><td>展示现有请求和响应代码，作为对照；无需为本文重写。</td></tr>
+<tr><td>测试参考文件</td><td>默认折叠，展开后可查看临时副本验证使用的测试。</td></tr>
+</tbody></table></div>
+<h3>实现顺序与依赖方向</h3>
+<pre><code>main       → validation（启动时注册请求校验规则）
+Controller → biz、resp_body、请求 / 响应 DTO、sys_error
+Biz        → auth、conf、model、请求 DTO、sys_error
+Model      → db → conf
+
+Controller 绑定并校验 *reqAdmin.LoginReq → 创建 biz.Admin → 调用 Login(ctx, req)
+Model 按 admin.name 查询 → Biz 验证密码、签发 JWT → Model 写入 token_hash
+Biz 将身份和令牌写入当前实体 → Controller 构造并返回 data.admin</code></pre>
+<p>登录使用已有管理员主键，不调用雪花发号器新建账号。数据库保存密码摘要与当前令牌摘要，完整 JWT 只交给前端。HTTP 200 配合业务码，成功消息固定为 <code>success</code>；<code>data</code> 的直接子项均为对象。</p>
+<details class="code-file" open><summary><span class="file-mode">JSON 示例</span><code class="file-path">成功响应 · HTTP 200</code></summary><div class="code-toolbar"><button type="button" data-copy="code-success-json" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-success-json" data-file="成功响应 · HTTP 200" data-kind="json">{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "admin": {
+      "id": "2119659239906480128",
+      "username": "admin",
+      "access_token": "&lt;完整 JWT 字符串&gt;"
+    }
+  }
+}
+</code></pre></details>
+<p>JWT 的类型约定为 Bearer，过期时间保留在后端签发的 <code>exp</code> 中；成功响应只包含上面三个管理员字段。后端在鉴权时判断过期，前端收到专门错误后跳转登录页。</p>
+<h3>JSON 字段说明</h3>
+<p>JSON 本身不支持注释，下面用表格解释字段，保留示例的合法 JSON 格式。</p>
+<div class="table-wrap"><table><thead><tr><th>字段路径</th><th>含义与约束</th></tr></thead><tbody>
+<tr><td>code</td><td>业务结果码，成功为 200；前端收到 HTTP 200 后仍须检查该值。</td></tr>
+<tr><td>message</td><td>响应说明，成功固定为 success，失败为相应错误消息。</td></tr>
+<tr><td>data</td><td>业务对象容器，直接子项按约定均为对象；错误响应使用 {}。</td></tr>
+<tr><td>data.admin</td><td>登录成功的管理员对象，由 LoginAdminResp 承载。</td></tr>
+<tr><td>data.admin.id</td><td>管理员雪花主键的十进制字符串，避免前端整数精度损失。</td></tr>
+<tr><td>data.admin.username</td><td>已验证账号名称，来源于数据库 name 列。</td></tr>
+<tr><td>data.admin.access_token</td><td>完整 JWT；后续请求放入 Authorization: Bearer JWT，请求过期由后端判断。</td></tr>
+</tbody></table></div>
+<h3>请求参数沿用当前文件</h3>
+<p>仍接收嵌套的 <code>admin.username</code>、<code>admin.password</code>。密码传原文，由后端按现有 SHA-256 存储规则比较；用户名保留大小写。当前两个字段均已加上 <code>notblank</code> 标签，需要先按第 06 节注册规则才能校验：</p>
+<details class="code-file"><summary><span class="file-mode">沿用现有文件</span><code class="file-path">param/req/v1/admin/login.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-request" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-request" data-file="param/req/v1/admin/login.go" data-kind="reference">package admin
+
+// LoginReq 定义登录请求的顶层对象，供 Controller 绑定并完整传给 Biz。
+type LoginReq struct {
+	// Admin 对应请求 JSON 的 admin 对象；指针配合 required 标签拒绝缺失或 null。
+	Admin *LoginAdminReq `json:"admin" binding:"required"`
+}
+
+// LoginAdminReq 定义 admin 对象中的登录凭据；binding 标签由 Gin 校验。
+type LoginAdminReq struct {
+	// Username 为必填用户名，长度 5～20 且不能全为空白；保留输入的大小写。
+	Username string `json:"username" binding:"required,min=5,max=20,notblank"`
+	// Password 为必填原始密码，长度 6～20 且不能全为空白；仅用于本次后端摘要比较。
+	Password string `json:"password" binding:"required,min=6,max=20,notblank"`
+}
+</code></pre></details></section><section id="configuration" aria-labelledby="configuration-title"><div class="section-label">02 / IMPLEMENTATION</div><h2 id="configuration-title">固定依赖版本，补齐 JWT 配置</h2>
+<p>本代码参考固定使用 <code>github.com/golang-jwt/jwt/v5 v5.3.1</code>，版本来自维护方发布记录。以下命令供未来实施时执行；本文没有修改工程的 <code>go.mod</code> 或 <code>go.sum</code>。</p>
+<details class="code-file" open><summary><span class="file-mode">命令示例</span><code class="file-path">依赖命令 · 后续实施时执行</code></summary><div class="code-toolbar"><button type="button" data-copy="code-dependency" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-dependency" data-file="依赖命令 · 后续实施时执行" data-kind="command">go get github.com/golang-jwt/jwt/v5@v5.3.1
+go mod tidy
+</code></pre></details>
+<h3>新增 conf/jwt.go</h3>
+<p>令牌参数与 Base64 编码的签名密钥一并保存在对应环境的 YAML 中。<code>validate()</code> 在启动加载阶段完成 Base64 解码、密钥长度和有效期检查；私有字段保存已校验的密钥，访问方法返回副本。</p>
+<details class="code-file" open><summary><span class="file-mode">新增完整文件</span><code class="file-path">conf/jwt.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-config-jwt" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-config-jwt" data-file="conf/jwt.go" data-kind="new">package conf
+
+import (
+	"encoding/base64"
+	"errors"
+	"strings"
+	"time"
+)
+
+// JWT 保存 YAML 中的令牌配置与启动时解码得到的私有密钥。
+type JWT struct {
+	// Issuer 对应 JWT 的 iss，标识允许签发令牌的后端。
+	Issuer string `yaml:"issuer"`
+	// Audience 对应 JWT 的 aud，标识令牌预期服务的客户端。
+	Audience string `yaml:"audience"`
+	// ExpireSeconds 是令牌有效秒数；必须为正数且能安全转换为 time.Duration。
+	ExpireSeconds int64 `yaml:"expire_seconds"`
+	// Secret 对应 jwt.secret，保存 Base64 编码的随机密钥；不得输出到日志或响应。
+	Secret string `yaml:"secret"`
+	// signingKey 保存从 Secret 解码出的原始字节；私有字段不参与 YAML 绑定。
+	signingKey []byte
+}
+
+// validate 在配置加载阶段检查签发方、受众、有效期和 YAML 中的 Base64 密钥。
+// 成功后将至少 32 字节的密钥保存到接收者；失败返回原因并阻止配置加载。
+func (j *JWT) validate() error {
+	j.Issuer = strings.TrimSpace(j.Issuer)
+	j.Audience = strings.TrimSpace(j.Audience)
+	if j.Issuer == "" || j.Audience == "" {
+		return errors.New("jwt.issuer 和 jwt.audience 不能为空")
+	}
+	const maxSeconds = int64((1&lt;&lt;63 - 1) / int64(time.Second))
+	if j.ExpireSeconds &lt;= 0 || j.ExpireSeconds &gt; maxSeconds {
+		return errors.New("jwt.expire_seconds 必须是有效的正整数秒数")
+	}
+
+	encoded := strings.TrimSpace(j.Secret)
+	if encoded == "" {
+		return errors.New("jwt.secret 不能为空")
+	}
+	key, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || len(key) &lt; 32 {
+		return errors.New("jwt.secret 必须是合法 Base64，解码后至少 32 字节")
+	}
+	j.signingKey = append([]byte(nil), key...)
+	return nil
+}
+
+// SigningKey 返回已校验密钥的副本，防止调用方修改配置内部的字节切片。
+func (j *JWT) SigningKey() []byte {
+	return append([]byte(nil), j.signingKey...)
+}
+
+// Lifetime 将已校验的有效秒数转为 time.Duration，供 JWT 签发工具使用。
+func (j *JWT) Lifetime() time.Duration {
+	return time.Duration(j.ExpireSeconds) * time.Second
+}
+</code></pre></details>
+<h3>在 conf/config.go 中追加两处内容</h3>
+<p>第一处加到现有 <code>Config</code> 结构体中；第二处加到现有 <code>validate()</code> 中，位于 Snowflake 校验通过之后、最终 <code>return nil</code> 之前。原来的配置加载、normalize 和其他校验逻辑继续保留。</p>
+<details class="code-file" open><summary><span class="file-mode">局部追加</span><code class="file-path">conf/config.go · Config 字段</code></summary><div class="code-toolbar"><button type="button" data-copy="code-config-field" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-config-field" data-file="conf/config.go · Config 字段" data-kind="fragment">// JWT 汇集签发方、受众、有效期和已校验密钥，随现有配置统一加载。
+JWT JWT `yaml:"jwt"`
+</code></pre></details><details class="code-file" open><summary><span class="file-mode">局部追加</span><code class="file-path">conf/config.go · validate() 末尾</code></summary><div class="code-toolbar"><button type="button" data-copy="code-config-validate" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-config-validate" data-file="conf/config.go · validate() 末尾" data-kind="fragment">// 放在现有 Snowflake 校验通过之后、最后的 return nil 之前。
+err = c.JWT.validate()
+if err != nil {
+    return err
+}
+</code></pre></details>
+<h3>配置文件追加 JWT 参数与密钥</h3>
+<p>开发、生产与示例配置文件均增加下面的 <code>jwt</code> 模板，维持当前 <code>KnownFields(true)</code> 的严格加载规则。<code>config.example.yaml</code> 保留空的 <code>secret</code>；实际启动前，在 <code>config.dev.yaml</code>、<code>config.prod.yaml</code> 中分别填入随机生成的 Base64 密钥。有效期仍为一周，不进入登录响应。</p>
+<details class="code-file" open><summary><span class="file-mode">局部追加</span><code class="file-path">config.dev.yaml / config.prod.yaml / config.example.yaml</code></summary><div class="code-toolbar"><button type="button" data-copy="code-yaml" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-yaml" data-file="config.dev.yaml / config.prod.yaml / config.example.yaml" data-kind="fragment"># JWT 配置模板；config.example.yaml 保留空 secret。
+# 运行前在 config.dev.yaml / config.prod.yaml 中分别填入独立生成的 Base64 密钥。
+jwt:
+  # issuer 写入 iss，解析时要求与此签发方匹配。
+  issuer: "SolarNotesAdminAPI"
+  # audience 写入 aud，限定令牌面向的客户端。
+  audience: "SolarNotesAdminWeb"
+  # expire_seconds 决定后端签发有效期；一周 = 7 × 24 × 60 × 60 = 604800 秒。
+  # 有效期不额外返回给前端。
+  expire_seconds: 604800
+  # secret 是至少 32 个随机字节的 Base64 编码，空值会导致启动校验失败。
+  secret: ""
+</code></pre></details>
+<h3>生成密钥并填入 jwt.secret</h3>
+<p>下面命令生成 32 个随机字节并以 Base64 输出。将输出的完整字符串复制到对应环境的 <code>jwt.secret</code> 引号内；开发和生产分别生成并保存各自的密钥，服务重启时继续使用同一个值。主动更换该值并重启服务后，旧 JWT 无法通过验签。</p>
+<details class="code-file" open><summary><span class="file-mode">命令示例</span><code class="file-path">随机密钥生成命令 · 后续实施时执行</code></summary><div class="code-toolbar"><button type="button" data-copy="code-secret-command" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-secret-command" data-file="随机密钥生成命令 · 后续实施时执行" data-kind="command"># 将输出的完整 Base64 字符串填入所选环境配置文件的 jwt.secret。
+openssl rand -base64 32
+</code></pre></details><div class="note"><p>启动时从 <code>jwt.secret</code> 读取 Base64 字符串，解码后保存到私有的 <code>signingKey</code>，且要求至少 32 字节；空值、编码错误或长度不足会使启动校验失败。Base64 只是编码，密钥仍应保密。已确认开发、生产配置被 Git 忽略，而示例配置受版本管理，因此示例只保留空值；实际配置文件仍需控制读取权限，并避免输出到日志或响应。现有 <code>conf.Load()</code> 会完成校验，无需新增 JWT 全局初始化。</p></div></section><section id="hashing" aria-labelledby="hashing-title"><div class="section-label">03 / IMPLEMENTATION</div><h2 id="hashing-title">实现摘要编码与恒定时间比较</h2>
+<p>这份文件沿用已确认的数据库约定：<code>password_hash</code> 为原始密码的 SHA-256 小写十六进制摘要，<code>token_hash</code> 为完整 JWT 的同类摘要。两者输入不同、用途不同，函数可以复用。</p>
+<details class="code-file" open><summary><span class="file-mode">新增完整文件</span><code class="file-path">auth/hash.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-hash" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-hash" data-file="auth/hash.go" data-kind="new">package auth
+
+import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+	"errors"
+)
+
+// ErrInvalidHash 表示数据库摘要无法解码为 32 字节，区别于普通密码不匹配。
+var ErrInvalidHash = errors.New("invalid SHA-256 hexadecimal digest")
+
+// SHA256Hex 计算 value 的 SHA-256 摘要，返回 64 个小写十六进制字符。
+// 调用方传原始密码时得到密码摘要，传完整 JWT 时得到数据库令牌摘要。
+func SHA256Hex(value string) string {
+	digest := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(digest[:])
+}
+
+// MatchSHA256 将 value 的摘要与 expectedHex 解码后的 32 字节摘要进行常量时间比较。
+// 匹配返回 true, nil，不匹配返回 false, nil；存储摘要格式损坏时返回 ErrInvalidHash。
+func MatchSHA256(value, expectedHex string) (bool, error) {
+	expected, err := hex.DecodeString(expectedHex)
+	if err != nil || len(expected) != sha256.Size {
+		return false, ErrInvalidHash
+	}
+	actual := sha256.Sum256([]byte(value))
+	return subtle.ConstantTimeCompare(actual[:], expected) == 1, nil
+}
+</code></pre></details>
+<p><code>SHA256Hex</code> 始终生成 64 个字符；<code>MatchSHA256</code> 先检查数据库摘要能否解码为 32 字节，再比较字节。错误摘要编码与密码不匹配分开返回：前者是内部数据异常，后者是正常的凭据错误。</p>
+<p>本实现保持现有密码算法，未做密码数据迁移。模型中的密码字段改名为 <code>PasswordHash</code>，使调用代码不会把数据库摘要误当成原始密码。</p>
+</section><section id="jwt" aria-labelledby="jwt-title"><div class="section-label">04 / IMPLEMENTATION</div><h2 id="jwt-title">实现 JWT 签发与基础验证工具</h2>
+<p><code>JWTOptions</code> 只包含工具需要的可信参数，工具包不读取数据库。签发时生成随机 jti，管理员主键作为字符串 sub；这样同一秒内两次登录也会产生不同的 JWT。</p>
+<p>JWT 工具按职责拆分为三个文件：参数结构体、校验与验签回调方法；声明结构体与校验方法；独立令牌函数与错误常量。三个文件均属于 <code>auth</code> 包，业务层与测试中的现有调用方式保持一致。后续落地时，将独立函数、错误和常量从 <code>admin_claims.go</code> 移至 <code>token.go</code>；若仍保留原来的 <code>auth/jwt.go</code>，应一并移除旧定义，避免重复声明。</p>
+<h3>auth/jwt_options.go：参数结构体、校验与验签回调</h3>
+<p>包含 <code>JWTOptions</code>、<code>validate()</code> 与 <code>verificationKey()</code>，集中定义可信签发参数、校验参数并提供验签密钥。回调需要读取当前配置中的密钥，因此作为 <code>JWTOptions</code> 的方法；解析器直接接收 <code>options.verificationKey</code>，无需在调用处定义匿名函数。</p>
+<details class="code-file" open><summary><span class="file-mode">新增完整文件</span><code class="file-path">auth/jwt_options.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-jwt-options" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-jwt-options" data-file="auth/jwt_options.go" data-kind="new">package auth
+
+import (
+	"errors"
+	"strings"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+// JWTOptions 定义签发与解析工具所需的可信参数，不读取数据库或请求头。
+type JWTOptions struct {
+	// Issuer 是期望的 iss；签发时写入，解析时要求完全匹配。
+	Issuer string
+	// Audience 是期望的 aud；签发时写入，解析时要求包含此受众。
+	Audience string
+	// Lifetime 是签发有效期，要求至少 1 秒且为整数秒。
+	Lifetime time.Duration
+	// SigningKey 是至少 32 字节的原始密钥，用于 HS256 签名与验签。
+	SigningKey []byte
+}
+
+// validate 检查 JWTOptions 是否满足工具的参数约束；失败返回配置错误。
+// 签发与解析都先执行此检查，不接受请求方自行指定算法或密钥。
+func (o JWTOptions) validate() error {
+	if strings.TrimSpace(o.Issuer) == "" || strings.TrimSpace(o.Audience) == "" {
+		return errors.New("JWT issuer and audience are required")
+	}
+	if o.Lifetime &lt; time.Second || o.Lifetime%time.Second != 0 {
+		return errors.New("JWT lifetime must be positive whole seconds")
+	}
+	if len(o.SigningKey) &lt; 32 {
+		return errors.New("JWT signing key must contain at least 32 bytes")
+	}
+	return nil
+}
+
+// verificationKey 为 JWT 解析器提供当前配置中的 HS256 验签密钥。
+// token 由解析器传入；算法不符合要求时返回 ErrInvalidToken。
+// 方法值 options.verificationKey 可直接作为回调，携带该次调用的配置，无需全局变量。
+func (o JWTOptions) verificationKey(token *jwt.Token) (any, error) {
+	if token.Method != jwt.SigningMethodHS256 {
+		return nil, ErrInvalidToken
+	}
+	return o.SigningKey, nil
+}
+</code></pre></details>
+<h3>auth/admin_claims.go：声明结构体与校验方法</h3>
+<p>仅包含 <code>AdminClaims</code> 与 <code>Validate()</code>，描述声明数据并验证当前声明实例。</p>
+<details class="code-file" open><summary><span class="file-mode">新增完整文件</span><code class="file-path">auth/admin_claims.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-admin-claims" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-admin-claims" data-file="auth/admin_claims.go" data-kind="new">package auth
+
+import (
+	"strconv"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+// AdminClaims 在标准 JWT 声明之外增加管理员身份的自定义校验。
+type AdminClaims struct {
+	// RegisteredClaims 承载 iss、sub、aud、iat、exp、jti 等标准字段。
+	// 其中 sub 是管理员 ID 的十进制字符串，jti 是每次签发生成的随机标识。
+	jwt.RegisteredClaims
+}
+
+// Validate 在 JWT 库完成标准声明检查后，补充管理员身份约束。
+// sub 必须能解析为正数 int64，jti 与 iat 必须存在；失败返回 ErrInvalidToken。
+func (c AdminClaims) Validate() error {
+	id, err := strconv.ParseInt(c.Subject, 10, 64)
+	if err != nil || id &lt;= 0 || c.ID == "" || c.IssuedAt == nil {
+		return ErrInvalidToken
+	}
+	return nil
+}
+</code></pre></details>
+<h3>auth/token.go：令牌函数、错误与常量</h3>
+<p>集中放置 <code>IssueAdminToken()</code>、<code>ParseAdminToken()</code>、<code>isOnlyExpired()</code>、<code>classifyTokenError()</code>，以及令牌错误定义和长度常量。签发函数负责创建新的声明，保留为包级函数；业务层继续使用 <code>auth.IssueAdminToken(...)</code>。<code>AdminClaims.Validate()</code> 可直接引用同包中的 <code>ErrInvalidToken</code>。</p>
+<details class="code-file" open><summary><span class="file-mode">新增完整文件</span><code class="file-path">auth/token.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-token" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-token" data-file="auth/token.go" data-kind="new">package auth
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"strconv"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+var (
+	// ErrInvalidToken 表示令牌格式、签名或声明不符合要求。
+	ErrInvalidToken = errors.New("invalid administrator token")
+	// ErrExpiredToken 表示验签与其他检查正常，唯一的具体问题是过期。
+	ErrExpiredToken = errors.New("administrator token expired")
+)
+
+// maxAdminTokenLength 是本实现对完整 JWT 的字节长度限制，并非 JWT 规范的固定长度。
+const maxAdminTokenLength = 4096
+
+// IssueAdminToken 为正数 adminID 签发完整的 HS256 JWT。
+// options 提供签发方、受众、有效期和密钥；每次生成随机 jti，避免同秒登录得到相同令牌。
+// 成功返回完整 JWT；参数、随机数、签名或长度检查失败时返回错误，不写数据库。
+func IssueAdminToken(adminID int64, options JWTOptions) (string, error) {
+	if err := options.validate(); err != nil {
+		return "", err
+	}
+	if adminID &lt;= 0 {
+		return "", errors.New("administrator ID must be positive")
+	}
+
+	randomID := make([]byte, 16)
+	if _, err := rand.Read(randomID); err != nil {
+		return "", err
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	claims := AdminClaims{RegisteredClaims: jwt.RegisteredClaims{
+		Issuer:    options.Issuer,                                // iss：当前后端签发方。
+		Subject:   strconv.FormatInt(adminID, 10),                // sub：用字符串存储管理员主键，避免精度损失。
+		Audience:  jwt.ClaimStrings{options.Audience},            // aud：这枚令牌允许面向的客户端。
+		IssuedAt:  jwt.NewNumericDate(now),                       // iat：本次签发时间，统一使用 UTC。
+		ExpiresAt: jwt.NewNumericDate(now.Add(options.Lifetime)), // exp：后端计算的到期时间，解析时强制要求并校验。
+		ID:        hex.EncodeToString(randomID),                  // jti：本次签发的随机唯一标识。
+	}}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	raw, err := token.SignedString(options.SigningKey)
+	if err != nil {
+		return "", err
+	}
+	if len(raw) &gt; maxAdminTokenLength {
+		return "", errors.New("JWT exceeds the supported length")
+	}
+	return raw, nil
+}
+
+// ParseAdminToken 验证 raw 中完整 JWT 的签名、算法、标准声明与管理员身份。
+// options 提供可信配置；成功返回管理员 ID，单独过期返回 ErrExpiredToken，
+// 其他令牌错误返回 ErrInvalidToken，配置错误原样返回。
+// 本方法不查询数据库；调用方仍须比较当前 token_hash，才能判断令牌是否已撤销。
+func ParseAdminToken(raw string, options JWTOptions) (int64, error) {
+	if err := options.validate(); err != nil {
+		return 0, err
+	}
+	if raw == "" || len(raw) &gt; maxAdminTokenLength {
+		return 0, ErrInvalidToken
+	}
+
+	claims := &amp;AdminClaims{}
+	// 直接传入具名方法值，方法从当前 options 取得密钥；签名与声明由库继续校验。
+	token, err := jwt.ParseWithClaims(raw, claims, options.verificationKey,
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithIssuer(options.Issuer),
+		jwt.WithAudience(options.Audience),
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuedAt(),
+	)
+	if err != nil {
+		if isOnlyExpired(err) {
+			return 0, ErrExpiredToken
+		}
+		return 0, ErrInvalidToken
+	}
+	if token == nil || !token.Valid {
+		return 0, ErrInvalidToken
+	}
+	id, err := strconv.ParseInt(claims.Subject, 10, 64)
+	if err != nil || id &lt;= 0 {
+		return 0, ErrInvalidToken
+	}
+	return id, nil
+}
+
+// isOnlyExpired 判断 JWT 库包装或合并的错误是否仅包含过期这一项具体错误。
+// 过期还伴随错误签发方、受众或主体时返回 false，避免误报为单纯过期。
+func isOnlyExpired(err error) bool {
+	hasExpired, hasOther := classifyTokenError(err)
+	return hasExpired &amp;&amp; !hasOther
+}
+
+// classifyTokenError 递归展开错误链，分别报告是否出现过期错误和其他具体错误。
+// hasExpired 表示存在 ErrTokenExpired，hasOther 表示存在其他具体错误。
+// 多个分支的结果按逻辑或合并；nil 和 JWT 库的通用声明错误标记不计为具体错误。
+// 函数仅通过参数与返回值传递状态，不使用闭包或包级可变状态。
+func classifyTokenError(err error) (hasExpired, hasOther bool) {
+	if err == nil {
+		return false, false
+	}
+	switch wrapped := err.(type) {
+	case interface{ Unwrap() []error }:
+		for _, child := range wrapped.Unwrap() {
+			childExpired, childOther := classifyTokenError(child)
+			hasExpired = hasExpired || childExpired
+			hasOther = hasOther || childOther
+		}
+		return hasExpired, hasOther
+	case interface{ Unwrap() error }:
+		return classifyTokenError(wrapped.Unwrap())
+	default:
+		// 通过 errors.Is 匹配具体错误，外层递归仍负责汇总所有分支。
+		switch {
+		case errors.Is(err, jwt.ErrTokenExpired):
+			return true, false
+		case errors.Is(err, jwt.ErrTokenInvalidClaims):
+			// JWT 库用于包装具体声明错误的分类标记。
+			return false, false
+		default:
+			return false, true
+		}
+	}
+}
+</code></pre></details>
+<div class="table-wrap"><table><thead><tr><th>函数 / 方法</th><th>所在文件</th><th>作用</th></tr></thead><tbody>
+<tr><td>JWTOptions.validate</td><td>jwt_options.go</td><td>统一校验签发方、受众、有效期和密钥长度。</td></tr>
+<tr><td>JWTOptions.verificationKey</td><td>jwt_options.go</td><td>供 ParseWithClaims 直接调用的具名回调，限制算法并返回当前配置中的验签密钥。</td></tr>
+<tr><td>AdminClaims.Validate</td><td>admin_claims.go</td><td>在 JWT 库标准校验外要求合法正数管理员 ID、jti 和签发时间。</td></tr>
+<tr><td>IssueAdminToken</td><td>token.go</td><td>签发 HS256 JWT，包含 sub、iss、aud、iat、exp、jti；不向前端返回额外的时间字段。</td></tr>
+<tr><td>ParseAdminToken</td><td>token.go</td><td>验签、限制算法，要求并校验声明；验证通过后才返回 int64 管理员 ID。</td></tr>
+<tr><td>isOnlyExpired</td><td>token.go</td><td>根据错误分类结果判断是否仅过期；过期同时伴随其他具体错误时返回 false。</td></tr>
+<tr><td>classifyTokenError</td><td>token.go</td><td>独立递归遍历错误链，通过两个返回值汇总过期与其他错误，不共享可变状态。</td></tr>
+</tbody></table></div>
+<p><code>ParseAdminToken()</code> 与 <code>isOnlyExpired()</code> 均直接调用外部声明的具名函数或方法；递归函数 <code>classifyTokenError()</code> 通过返回值传递每个分支的分类结果。调用接口及错误码保持一致。</p>
+<p>具体错误通过 <code>errors.Is()</code> 匹配，同时保留外层对 <code>Unwrap() error</code> 和 <code>Unwrap() []error</code> 的递归展开。逐个汇总子错误，才能区分“仅过期”和“过期同时伴随其他错误”；只检查是否包含过期错误还不够。</p>
+<p>4096 字节是本实现的令牌接收上限，并非 JWT 规范规定的固定长度。签发和解析采用相同限制，配置导致令牌过长时不会返回成功。</p>
+<div class="note"><p><code>ParseAdminToken</code> 只验证 JWT 本身。它不查询当前 <code>token_hash</code>，因此不能单独作为完整鉴权中间件使用。后续路由还必须执行第 11 节的数据库摘要检查。</p></div></section><section id="model" aria-labelledby="model-title"><div class="section-label">05 / IMPLEMENTATION</div><h2 id="model-title">实现模型映射、查询和条件更新</h2>
+<p>保留当前单数表名配置，<code>model.Admin</code> 自然映射到 <code>admin</code>；不新增 TableName 方法，不添加 JSON 标签。使用 GORM 标签把 Go 的 <code>Username</code> 映射到数据库 <code>name</code>。</p>
+<details class="code-file" open><summary><span class="file-mode">替换完整文件</span><code class="file-path">model/admin.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-model" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-model" data-file="model/admin.go" data-kind="replace">package model
+
+import (
+	"context"
+	"errors"
+
+	"SolarNotesAdminAPI/db"
+	"gorm.io/gorm"
+)
+
+// ErrAdminNotFound 将数据库记录不存在转换为业务层可识别的错误。
+var ErrAdminNotFound = errors.New("administrator not found")
+
+// Admin 映射现有 admin 表，使用全局 SingularTable 配置确定表名。
+// 仅承担持久化映射，不直接参与 JSON 序列化。
+type Admin struct {
+	// ID 是既有的雪花主键；登录只读取该值，不使用数据库自增。
+	ID int64 `gorm:"column:id;primaryKey;autoIncrement:false"`
+	// Username 映射 name 列；账号比较是否区分大小写由该列排序规则决定。
+	Username string `gorm:"column:name"`
+	// PasswordHash 映射 password_hash，存储原始密码的 SHA-256 十六进制摘要。
+	PasswordHash string `gorm:"column:password_hash"`
+	// TokenHash 映射 token_hash，保存当前完整 JWT 的 SHA-256 摘要；空串表示无有效会话。
+	TokenHash string `gorm:"column:token_hash"`
+}
+
+// FindAdminByName 使用 ctx 按 username 查询管理员登录必需的列。
+// 查询成功后将结果写入接收者 a，返回 nil；查询失败时不覆盖接收者。
+// 不存在时返回 ErrAdminNotFound，其他数据库错误原样返回；调用方应先处理错误再读取字段。
+func (a *Admin) FindAdminByName(ctx context.Context, username string) error {
+	if a == nil {
+		return errors.New("administrator model is nil")
+	}
+	if db.DB == nil {
+		return errors.New("database is not initialized")
+	}
+	// 使用临时记录接收查询结果，避免接收者已有 ID 隐式参与查询条件。
+	record := &amp;Admin{}
+	err := db.DB.WithContext(ctx).
+		Select("id", "name", "password_hash").
+		Where("name = ?", username).
+		Take(record).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrAdminNotFound
+	}
+	if err != nil {
+		return err
+	}
+	*a = *record
+	return nil
+}
+
+// UpdateAdminTokenHash 使用 ctx 为接收者代表的管理员条件更新当前令牌摘要。
+// a.ID 和 a.PasswordHash 必须来自已成功完成的查询；PasswordHash 保留查询时的值，
+// 用作密码未发生变化的更新条件，防止改密后旧密码验证结果重新建立登录。
+// newTokenHash 是新 JWT 的摘要；命中一行时同步 a.TokenHash 并返回 true，
+// 未命中返回 false, nil，执行失败返回错误；失败时不修改接收者字段。
+func (a *Admin) UpdateAdminTokenHash(ctx context.Context, newTokenHash string) (bool, error) {
+	if a == nil {
+		return false, errors.New("administrator model is nil")
+	}
+	if db.DB == nil {
+		return false, errors.New("database is not initialized")
+	}
+	result := db.DB.WithContext(ctx).
+		Model(&amp;Admin{}).
+		Where("id = ?", a.ID).
+		Where("CAST(password_hash AS BINARY) = CAST(? AS BINARY)", a.PasswordHash).
+		Update("token_hash", newTokenHash)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return false, nil
+	}
+	a.TokenHash = newTokenHash
+	return true, nil
+}
+</code></pre></details>
+<p>Model 把 GORM 的“记录不存在”转换为 <code>ErrAdminNotFound</code>，让 Biz 不必依赖 ORM 的错误类型。账号查询使用参数占位符，区分大小写的比较由现有列排序规则执行。</p>
+<p>两个数据库操作都使用 <code>*model.Admin</code> 接收者。Biz 每次创建自己的模型实例，先调用 <code>record.FindAdminByName(ctx, username)</code> 并处理错误，再读取该实例中的身份与密码摘要；随后通过同一个实例调用 <code>record.UpdateAdminTokenHash(ctx, newTokenHash)</code>。</p>
+<div class="table-wrap"><table><thead><tr><th>模型方法</th><th>返回值与接收者变化</th></tr></thead><tbody>
+<tr><td>FindAdminByName(ctx, username)</td><td>返回 error；成功时将查询结果写入当前实例，失败时不覆盖原字段。</td></tr>
+<tr><td>UpdateAdminTokenHash(ctx, newTokenHash)</td><td>返回 (bool, error)；使用实例 ID 与查询时的密码摘要作为更新条件，成功后同步实例 TokenHash。</td></tr>
+</tbody></table></div>
+<h3>为什么更新时还要带密码哈希条件</h3>
+<p>查询账号后，管理员可能正好改密。模型实例的 <code>PasswordHash</code> 保留本次查询时的摘要，更新前不要修改该字段。写入令牌时再次要求数据库密码摘要与此值一致，可避免旧密码验证结果在改密提交后重新建立登录。CAST 条件按编码内容精确比较，更新仍通过实例的主键定位。</p>
+<pre><code>UPDATE admin
+SET token_hash = ?
+WHERE id = ?
+  AND CAST(password_hash AS BINARY) = CAST(? AS BINARY);</code></pre>
+<p>更新只命中一行才算保存成功；0 行由 Biz 转成“账号状态已变化”。使用单列 Update，不把查询出的旧模型整体 Save 回去。模型未声明日期字段，现有数据库的 ON UPDATE 继续维护更新时间。</p>
+</section><section id="validation" aria-labelledby="validation-title"><div class="section-label">06 / IMPLEMENTATION</div><h2 id="validation-title">注册自定义请求校验规则</h2>
+<p>当前请求结构中，用户名和密码均使用了 <code>notblank</code>。Gin 的默认校验器不会自动识别这个自定义标签，需要在执行任何带该标签的校验之前注册规则；未注册就校验会触发 panic，不能依赖 Controller 的普通错误分支处理。</p>
+<h3>推荐位置：validation/validation.go</h3>
+<p>建议在工程根目录新建 <code>validation</code> 包，把可复用的请求参数校验规则和注册函数放进 <code>validation/validation.go</code>。这个包负责对接 Gin 的校验器；请求 DTO 只声明标签，Controller 继续调用 <code>ShouldBindJSON()</code>，Biz 无须依赖 Gin。<code>main.go</code> 负责在启动时调用一次注册函数。</p>
+<details class="code-file" open><summary><span class="file-mode">新增完整文件</span><code class="file-path">validation/validation.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-validation" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-validation" data-file="validation/validation.go" data-kind="new">package validation
+
+import (
+	"errors"
+	"reflect"
+	"strings"
+
+	"github.com/gin-gonic/gin/binding"
+	"github.com/go-playground/validator/v10"
+)
+
+// Register 为 Gin 的默认参数校验器注册自定义规则。
+// 应在程序启动时、任何请求参数校验开始前调用一次；注册失败时返回错误。
+func Register() error {
+	if binding.Validator == nil {
+		return errors.New("Gin 参数校验器未启用")
+	}
+
+	v, ok := binding.Validator.Engine().(*validator.Validate)
+	if !ok || v == nil {
+		return errors.New("无法获取 Gin 默认参数校验器")
+	}
+
+	return v.RegisterValidation("notblank", notBlank)
+}
+
+// notBlank 检查字符串是否至少包含一个非空白字符；非字符串字段不通过校验。
+// 它只读取字段，使用 TrimSpace 判断，不修改原始用户名或密码。
+func notBlank(field validator.FieldLevel) bool {
+	value := field.Field()
+	if value.Kind() != reflect.String {
+		return false
+	}
+	return strings.TrimSpace(value.String()) != ""
+}
+</code></pre></details>
+<p>现有 <code>go.mod</code> 已通过 Gin 间接引入 <code>github.com/go-playground/validator/v10</code>；新增代码直接引用它后，落地时执行第 02 节中的 <code>go mod tidy</code>，让依赖声明与实际引用保持一致。</p>
+<h3>启动与请求时分别发生什么</h3>
+<p>在 <code>main.go</code> 的 import 中增加 <code>"SolarNotesAdminAPI/validation"</code>，然后在 <code>conf.Load()</code> 成功之后调用以下代码。第 10 节提供了可对照的完整 <code>main.go</code>。</p>
+<details class="code-file" open><summary><span class="file-mode">局部追加</span><code class="file-path">main.go · 启动时注册规则</code></summary><div class="code-toolbar"><button type="button" data-copy="code-validation-startup" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-validation-startup" data-file="main.go · 启动时注册规则" data-kind="fragment">// 在 main 中、conf.Load 成功之后调用；注册失败时终止启动。
+if err := validation.Register(); err != nil {
+	log.Fatalf("注册自定义请求校验规则失败: %v", err)
+}
+</code></pre></details>
+<p>注册须早于任何参数校验，也不要在每次请求中重复注册：校验规则的注册不是并发安全操作。</p>
+<pre><code>main 启动 → validation.Register() 注册 notblank
+Controller → ShouldBindJSON(req)：解析 JSON 并校验 binding 标签
+  → 失败：返回参数校验错误，不进入 Biz
+  → 成功：将完整 req 交给 biz.Admin.Login()</code></pre>
+<div class="table-wrap"><table><thead><tr><th>输入情况</th><th>ShouldBindJSON 结果</th></tr></thead><tbody>
+<tr><td>用户名为 admin，密码为 123456</td><td>通过参数校验；之后仍需验证账号和密码。</td></tr>
+<tr><td>用户名为 5 个空格，或密码为 6 个空格</td><td>长度符合要求，但 <code>notblank</code> 拒绝纯空白。</td></tr>
+<tr><td>缺少 admin 对象或必填字段为空</td><td>由 <code>required</code> 拒绝。</td></tr>
+<tr><td>用户名含前后空格，但不全是空白</td><td>长度符合时通过；用户名原样查询，密码也按原样比较。</td></tr>
+</tbody></table></div>
+<p><code>notblank</code> 使用 <code>strings.TrimSpace</code> 判断，包括 Unicode 空白；它不会去掉字段中的空格。<code>min</code> 和 <code>max</code> 按原始字符串中的 Unicode 码点数量计数，空白也计入长度。</p>
+<h3>违反 notblank 时的错误响应</h3>
+<p>规则已注册时，自定义校验函数返回 <code>false</code> 会使 <code>ShouldBindJSON()</code> 返回 <code>validator.ValidationErrors</code>，Controller 将其交给 <code>ValidateError(err)</code>，然后返回 HTTP 200 和业务码 10101。以下示例中的用户名是 5 个空格、密码为 <code>123456</code>：</p>
+<details class="code-file" open><summary><span class="file-mode">JSON 示例</span><code class="file-path">用户名违反 notblank · HTTP 200</code></summary><div class="code-toolbar"><button type="button" data-copy="code-notblank-response" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-notblank-response" data-file="用户名违反 notblank · HTTP 200" data-kind="json">{
+  "code": 10101,
+  "message": "Key: 'LoginReq.Admin.Username' Error:Field validation for 'Username' failed on the 'notblank' tag",
+  "data": {}
+}
+</code></pre></details>
+<p>密码违反规则时，消息中的字段路径和名称分别变为 <code>LoginReq.Admin.Password</code>、<code>Password</code>。当前示例直接返回校验器的英文错误文本；如果一个字段先违反 <code>required</code> 或 <code>min</code>，则会报告先失败的规则，而不是 <code>notblank</code>。</p>
+<div class="note"><p>如果其他代码直接调用业务方法，Gin 的 <code>binding</code> 校验不会自动执行。本文 Biz 只保留 nil 防护，不再检查字段内容；非 Controller 调用方应先完成相同的参数校验。</p></div>
+</section><section id="biz" aria-labelledby="biz-title"><div class="section-label">07 / IMPLEMENTATION</div><h2 id="biz-title">业务方法接收完整 LoginReq</h2>
+<p>业务入口为 <code>func (a *Admin) Login(ctx context.Context, req *reqAdmin.LoginReq) error</code>。Controller 传入完整请求对象；Biz 负责查询、验证和保存令牌摘要，成功后将 ID、用户名与令牌写入当前业务实体，只返回错误。Controller 读取这个实体，创建并填充响应 DTO。</p>
+<h3>将错误定义放入 sys_error</h3>
+<p>在已有的 <code>sys_error</code> 目录中分别定义两个错误类型及其方法；登录业务的三个具名错误统一放在第三个文件。Biz 返回这些错误，Controller 根据错误类型或标识决定响应。</p>
+<h4>sys_error/database_error.go</h4>
+<details class="code-file" open><summary><span class="file-mode">新增完整文件</span><code class="file-path">sys_error/database_error.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-sys-database" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-sys-database" data-file="sys_error/database_error.go" data-kind="new">package sys_error
+
+// DatabaseError 包装数据库故障，便于调用方识别错误类别。
+type DatabaseError struct {
+	// Cause 保留底层数据库错误，供受控排查与错误链检查；不直接发送给前端。
+	Cause error
+}
+
+// Error 返回统一的数据库错误消息，不拼接底层 SQL 或连接细节。
+func (e *DatabaseError) Error() string { return "数据库操作失败，请稍后重试" }
+
+// Unwrap 暴露底层错误，支持 errors.Is 与 errors.As 沿错误链检查原因。
+func (e *DatabaseError) Unwrap() error { return e.Cause }
+</code></pre></details>
+<h4>sys_error/internal_error.go</h4>
+<details class="code-file" open><summary><span class="file-mode">新增完整文件</span><code class="file-path">sys_error/internal_error.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-sys-internal" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-sys-internal" data-file="sys_error/internal_error.go" data-kind="new">package sys_error
+
+// InternalError 包装配置、摘要格式或令牌生成等内部处理故障。
+type InternalError struct {
+	// Cause 保存内部失败原因；对外消息由 Error 统一提供。
+	Cause error
+}
+
+// Error 返回统一内部错误消息，避免向外暴露实现细节。
+func (e *InternalError) Error() string { return "服务暂时不可用，请稍后重试" }
+
+// Unwrap 返回原始内部错误，供受控诊断或错误链检查。
+func (e *InternalError) Unwrap() error { return e.Cause }
+</code></pre></details>
+<h4>sys_error/admin_error.go</h4>
+<details class="code-file" open><summary><span class="file-mode">新增完整文件</span><code class="file-path">sys_error/admin_error.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-sys-admin" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-sys-admin" data-file="sys_error/admin_error.go" data-kind="new">package sys_error
+
+import "errors"
+
+var (
+	// ErrInvalidLoginRequest 表示上下文或请求对象缺失。
+	ErrInvalidLoginRequest = errors.New("请求参数不合法")
+	// ErrInvalidCredentials 统一表示账号不存在或密码不匹配。
+	ErrInvalidCredentials = errors.New("账号或密码错误")
+	// ErrLoginStateChanged 表示密码验证后，写入令牌的条件更新未命中。
+	ErrLoginStateChanged = errors.New("账号状态已变化，请重新登录")
+)
+</code></pre></details>
+<h3>biz/admin.go：执行业务并填写当前实体</h3>
+<details class="code-file" open><summary><span class="file-mode">替换完整文件</span><code class="file-path">biz/admin.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-biz" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-biz" data-file="biz/admin.go" data-kind="replace">package biz
+
+import (
+	"context"
+	"errors"
+
+	"SolarNotesAdminAPI/auth"
+	"SolarNotesAdminAPI/conf"
+	"SolarNotesAdminAPI/model"
+	reqAdmin "SolarNotesAdminAPI/param/req/v1/admin"
+	"SolarNotesAdminAPI/sys_error"
+)
+
+// Admin 是每次登录请求独立创建的业务实体，登录成功后保存已确认的身份和本次令牌。
+type Admin struct {
+	// ID 保存已验证管理员的主键，业务层使用 int64。
+	ID int64
+	// Username 保存数据库返回的账号名称，不保存请求中的原始密码。
+	Username string
+	// AccessToken 是本次签发的完整 JWT，仅在其摘要成功写入数据库后设置。
+	AccessToken string
+}
+
+// Login 使用 ctx 执行管理员登录，req 接收 Controller 绑定后的完整请求对象。
+// 查询账号、验证密码、签发 JWT 并条件保存摘要；成功后将结果写入当前 Admin 并返回 nil。
+// 失败仅返回 sys_error 中的错误，Controller 负责处理响应；实体不保存原始密码。
+func (a *Admin) Login(ctx context.Context, req *reqAdmin.LoginReq) error {
+	if a == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("nil business entity")}
+	}
+	// 如果实例被重复使用，先清除旧结果，避免失败后保留上一枚令牌。
+	a.ID, a.Username, a.AccessToken = 0, "", ""
+
+	// Controller 已执行字段校验；这里防护直接调用时的 nil。
+	if ctx == nil || req == nil || req.Admin == nil {
+		return sys_error.ErrInvalidLoginRequest
+	}
+
+	record := &amp;model.Admin{}
+	err := record.FindAdminByName(ctx, req.Admin.Username)
+	if errors.Is(err, model.ErrAdminNotFound) {
+		return sys_error.ErrInvalidCredentials
+	}
+	if err != nil {
+		return &amp;sys_error.DatabaseError{Cause: err}
+	}
+
+	matched, err := auth.MatchSHA256(req.Admin.Password, record.PasswordHash)
+	if err != nil {
+		return &amp;sys_error.InternalError{Cause: err}
+	}
+	if !matched {
+		return sys_error.ErrInvalidCredentials
+	}
+
+	config := conf.Get()
+	if config == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("configuration is not loaded")}
+	}
+	options := auth.JWTOptions{
+		Issuer:     config.JWT.Issuer,
+		Audience:   config.JWT.Audience,
+		Lifetime:   config.JWT.Lifetime(),
+		SigningKey: config.JWT.SigningKey(),
+	}
+	token, err := auth.IssueAdminToken(record.ID, options)
+	if err != nil {
+		return &amp;sys_error.InternalError{Cause: err}
+	}
+
+	updated, err := record.UpdateAdminTokenHash(ctx, auth.SHA256Hex(token))
+	if err != nil {
+		return &amp;sys_error.DatabaseError{Cause: err}
+	}
+	if !updated {
+		return sys_error.ErrLoginStateChanged
+	}
+
+	a.ID, a.Username, a.AccessToken = record.ID, record.Username, token
+	return nil
+}
+</code></pre></details>
+<h3>成功顺序保持固定</h3>
+<ol><li>创建 model.Admin 实例，调用 FindAdminByName 查询账号；不存在与密码错误均返回统一凭据错误。</li><li>验证实例中的密码摘要；损坏的数据库摘要按内部错误处理。</li><li>从已加载配置构造 JWTOptions，生成完整 JWT。</li><li>计算 JWT 摘要，调用同一模型实例的 UpdateAdminTokenHash 条件更新管理员记录。</li><li>仅在写库成功后，将 ID、用户名和令牌写入当前 biz.Admin，并返回 nil。</li></ol>
+<p><code>sys_error.DatabaseError</code> 与 <code>sys_error.InternalError</code> 保留内部原因供受控排查，<code>Error()</code> 只返回统一消息。Controller 通过 <code>errors.Is</code> 识别登录业务错误，通过 <code>errors.As</code> 识别数据库错误，并负责选择响应。</p>
+<div class="note"><p>每次请求创建自己的 <code>biz.Admin</code>。多次成功登录仍以数据库最后写入的摘要为准，前一枚 JWT 即使尚未到期也会在后续完整鉴权中失效。登录过程不创建账号、不生成新的管理员 ID。</p></div></section><section id="response" aria-labelledby="response-title"><div class="section-label">08 / IMPLEMENTATION</div><h2 id="response-title">沿用响应 DTO 与 map[string]any 包装</h2>
+<h3>既有响应 DTO 保持不变</h3>
+<p>你的 <code>LoginResp.Admin</code> 是 <code>*LoginAdminResp</code>，访问令牌属于这个管理员对象。下方仅展示现有定义供对照。</p>
+<details class="code-file"><summary><span class="file-mode">沿用现有文件</span><code class="file-path">param/resp/v1/admin/login.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-dto" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-dto" data-file="param/resp/v1/admin/login.go" data-kind="reference">package admin
+
+// LoginResp 定义登录成功的业务响应；Controller 将 Admin 放入 data.admin。
+type LoginResp struct {
+	// Admin 对应 data.admin，包含管理员身份与本次访问令牌。
+	Admin *LoginAdminResp `json:"admin"`
+}
+
+// LoginAdminResp 定义 data.admin 的三个字段，不向响应额外添加令牌类型或有效期。
+type LoginAdminResp struct {
+	// ID 是十进制字符串，避免前端读取雪花 ID 时丢失精度。
+	ID string `json:"id"`
+	// Username 来自数据库 name 列，返回已验证的账号名称。
+	Username string `json:"username"`
+	// AccessToken 是完整 JWT；前端使用 Authorization: Bearer JWT 发送。
+	AccessToken string `json:"access_token"`
+}
+</code></pre></details>
+<h3>包装器补齐错误方法</h3>
+<p>保持原有 <code>Data map[string]any</code> 与 <code>Success(data map[string]any)</code>，成功消息仍为 <code>success</code>。新增的过期、无效令牌方法为后续鉴权准备，不代表当前已有受保护路由。</p>
+<details class="code-file" open><summary><span class="file-mode">替换完整文件</span><code class="file-path">resp_body/resp_body.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-response" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-response" data-file="resp_body/resp_body.go" data-kind="replace">package resp_body
+
+const (
+	// SuccessCode 表示业务处理成功，与本工程的 HTTP 200 约定配合。
+	SuccessCode = 200
+	// ServiceInternalErrorCode 表示内部处理失败。
+	ServiceInternalErrorCode = 500
+	// ValidateErrorCode 表示 JSON 绑定或参数校验失败。
+	ValidateErrorCode = 10101
+	// DBErrorCode 表示数据库操作失败。
+	DBErrorCode = 10201
+	// LoginCredentialErrorCode 统一表示账号或密码错误。
+	LoginCredentialErrorCode = 20001
+	// LoginStateChangedCode 表示登录期间凭据状态变化，需要重新登录。
+	LoginStateChangedCode = 20002
+	// TokenExpiredCode 用于后续受保护请求的令牌过期响应。
+	TokenExpiredCode = 20003
+	// InvalidTokenCode 用于后续受保护请求的无效或撤销令牌响应。
+	InvalidTokenCode = 20004
+)
+
+// RespBody 是统一 JSON 响应包装器；本工程使用 HTTP 200 搭配业务 Code。
+type RespBody struct {
+	// Code 是业务结果码；200 表示成功，其余按约定的错误类别解释。
+	Code int `json:"code"`
+	// Message 是前端展示或诊断用的说明；成功固定为 success。
+	Message string `json:"message"`
+	// Data 是业务对象容器；约定直接子项均为对象，错误时赋值空 map 输出 {}。
+	Data map[string]any `json:"data"`
+}
+
+// Success 设置成功业务码与消息，并接收对象容器 data。
+// 调用方需保证 map 的直接值为业务对象；该类型本身不会限制 any 的具体值。
+func (r *RespBody) Success(data map[string]any) {
+	r.Code = SuccessCode
+	r.Message = "success"
+	r.Data = data
+}
+
+// failure 统一设置错误业务码、消息和空对象 data，避免输出 null 或遗留成功数据。
+func (r *RespBody) failure(code int, message string) {
+	r.Code, r.Message = code, message
+	r.Data = map[string]any{}
+}
+
+// ValidateError 生成参数校验错误；err 非空时使用校验消息，否则采用默认说明。
+func (r *RespBody) ValidateError(err error) {
+	message := "请求参数不合法"
+	if err != nil {
+		message = err.Error()
+	}
+	r.failure(ValidateErrorCode, message)
+}
+
+// DBError 生成统一数据库错误响应；保留 error 形参以兼容调用方式，不直接暴露其内容。
+func (r *RespBody) DBError(_ error) {
+	r.failure(DBErrorCode, "数据库操作失败，请稍后重试")
+}
+
+// InternalError 生成统一内部错误响应，不向前端输出底层错误。
+func (r *RespBody) InternalError(_ error) {
+	r.failure(ServiceInternalErrorCode, "服务暂时不可用，请稍后重试")
+}
+
+// LoginCredentialError 将账号不存在与密码不匹配统一为相同响应。
+func (r *RespBody) LoginCredentialError() {
+	r.failure(LoginCredentialErrorCode, "账号或密码错误")
+}
+
+// LoginStateChanged 表示验证凭据后，管理员记录的条件更新未命中。
+func (r *RespBody) LoginStateChanged() {
+	r.failure(LoginStateChangedCode, "账号状态已变化，请重新登录")
+}
+
+// TokenExpired 生成过期响应，供后续鉴权中间件在确认令牌仅过期时调用。
+func (r *RespBody) TokenExpired() {
+	r.failure(TokenExpiredCode, "登录已过期，请重新登录")
+}
+
+// InvalidToken 生成令牌无效或已撤销的响应，供后续鉴权中间件使用。
+func (r *RespBody) InvalidToken() {
+	r.failure(InvalidTokenCode, "登录状态无效，请重新登录")
+}
+</code></pre></details>
+<div class="table-wrap"><table><thead><tr><th>业务码</th><th>含义</th></tr></thead><tbody>
+<tr><td>200</td><td>登录成功，返回 data.admin。</td></tr><tr><td>10101</td><td>请求 JSON、必填、长度或防御性参数检查失败。</td></tr>
+<tr><td>20001</td><td>统一账号或密码错误。</td></tr><tr><td>20002</td><td>凭据验证后记录状态变化，摘要条件更新未命中。</td></tr>
+<tr><td>10201 / 500</td><td>数据库错误 / 内部处理错误。</td></tr><tr><td>20003 / 20004</td><td>后续鉴权：令牌过期 / 无效或已撤销。</td></tr>
+</tbody></table></div>
+<p><code>map[string]any</code> 允许灵活的值类型；本工程通过响应构造约定保证其直接子项为对象。Controller 仅放入管理员响应结构体指针，测试再检查实际 JSON 层级。错误时始终赋值空 map，让 data 序列化成 <code>{}</code>。</p>
+</section><section id="controller" aria-labelledby="controller-title"><div class="section-label">09 / IMPLEMENTATION</div><h2 id="controller-title">控制器绑定、调用并组装成功响应</h2>
+<p>下面替换当前只打印用户名和密码的处理函数。请求、响应包都叫 admin，分别用 reqAdmin 与 respAdmin 别名，避免混淆。</p>
+<details class="code-file" open><summary><span class="file-mode">替换完整文件</span><code class="file-path">controller/v1/admin/admin.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-controller" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-controller" data-file="controller/v1/admin/admin.go" data-kind="replace">package admin
+
+import (
+	"errors"
+	"log"
+	"net/http"
+	"strconv"
+
+	"SolarNotesAdminAPI/biz"
+	reqAdmin "SolarNotesAdminAPI/param/req/v1/admin"
+	respAdmin "SolarNotesAdminAPI/param/resp/v1/admin"
+	"SolarNotesAdminAPI/resp_body"
+	"SolarNotesAdminAPI/sys_error"
+
+	"github.com/gin-gonic/gin"
+)
+
+// Login 处理 POST /v1/admin/login；c 提供请求上下文、JSON 绑定与响应写入。
+// 绑定完整 LoginReq 后交给 Biz，按错误类别响应；成功时从业务实体构造响应 DTO。
+// 无返回值，处理结果通过 HTTP 200 与业务码写入响应，同时禁止缓存登录响应。
+func Login(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	req := &amp;reqAdmin.LoginReq{}
+	respBody := &amp;resp_body.RespBody{}
+
+	if err := c.ShouldBindJSON(req); err != nil {
+		respBody.ValidateError(err)
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	adminBiz := &amp;biz.Admin{}
+	err := adminBiz.Login(c.Request.Context(), req)
+	if err != nil {
+		var databaseError *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, sys_error.ErrInvalidLoginRequest):
+			respBody.ValidateError(err)
+		case errors.Is(err, sys_error.ErrInvalidCredentials):
+			respBody.LoginCredentialError()
+		case errors.Is(err, sys_error.ErrLoginStateChanged):
+			respBody.LoginStateChanged()
+		case errors.As(err, &amp;databaseError):
+			log.Printf("管理员登录：%v", databaseError)
+			respBody.DBError(databaseError)
+		default:
+			log.Printf("管理员登录：%v", err)
+			respBody.InternalError(err)
+		}
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	loginResp := &amp;respAdmin.LoginResp{
+		Admin: &amp;respAdmin.LoginAdminResp{
+			ID:          strconv.FormatInt(adminBiz.ID, 10),
+			Username:    adminBiz.Username,
+			AccessToken: adminBiz.AccessToken,
+		},
+	}
+	respBody.Success(map[string]any{"admin": loginResp.Admin})
+	c.JSON(http.StatusOK, respBody)
+}
+</code></pre></details>
+<p>Controller 把完整请求交给 Biz；登录成功后，从自己创建的 <code>adminBiz</code> 读取 ID、用户名和令牌，创建并填充既有响应 DTO，同时把大整数主键转为字符串。</p>
+<pre><code>respBody.Success(map[string]any{"admin": loginResp.Admin})
+→ data.admin.id
+→ data.admin.username
+→ data.admin.access_token</code></pre>
+<p>HTTP 状态仍使用 200，前端必须再检查业务 code。示例日志只记录错误类别与统一消息，不打印请求对象、原始密码、完整 JWT 或数据库摘要。</p>
+</section><section id="startup" aria-labelledby="startup-title"><div class="section-label">10 / IMPLEMENTATION</div><h2 id="startup-title">参数化 SQL 日志与启动流程</h2>
+<p>登录要读写凭据摘要，GORM 的错误和慢 SQL 日志使用 ParameterizedQueries，避免展开绑定参数。下面保留现有单数表名、DSN、连接池参数和连接初始化顺序。</p>
+<details class="code-file" open><summary><span class="file-mode">替换完整文件</span><code class="file-path">db/connect.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-database" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-database" data-file="db/connect.go" data-kind="replace">package db
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"time"
+
+	"SolarNotesAdminAPI/conf"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+	"gorm.io/gorm/schema"
+)
+
+// DB 保存启动时建立的共享连接，Model 通过它发起带上下文的查询。
+var DB *gorm.DB
+
+// Connect 根据 dbConf 建立 MySQL/GORM 连接，配置参数化 SQL 日志、单数表名和连接池。
+// 成功后将连接保存到 DB；初始化失败时返回错误，交由启动流程决定是否退出。
+func Connect(dbConf conf.Database) error {
+	dsn := buildDSN(dbConf)
+	queryLogger := logger.New(log.New(os.Stdout, "[gorm] ", log.LstdFlags), logger.Config{
+		SlowThreshold:             time.Second,
+		LogLevel:                  logger.Warn,
+		IgnoreRecordNotFoundError: true,
+		ParameterizedQueries:      true,
+		Colorful:                  false,
+	})
+	opts := &amp;gorm.Config{
+		NamingStrategy: schema.NamingStrategy{SingularTable: true},
+		Logger:         queryLogger,
+	}
+
+	connection, err := gorm.Open(mysql.Open(dsn), opts)
+	if err != nil {
+		return fmt.Errorf("连接数据库失败: %w", err)
+	}
+	sqlDB, err := connection.DB()
+	if err != nil {
+		return fmt.Errorf("连接数据库失败: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(10)
+	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+
+	DB = connection
+	return nil
+}
+
+// buildDSN 根据已有数据库配置组装 MySQL 连接字符串，保留字符集、时间解析和时区设置。
+// 返回值包含连接凭据，仅交给驱动使用，不应写入日志或响应。
+func buildDSN(dbConf conf.Database) string {
+	return dbConf.User + ":" + dbConf.Password + "@tcp(" + dbConf.Host +
+		":" + dbConf.Port + ")/" + dbConf.Name + "?charset=utf8mb4&amp;parseTime=True&amp;loc=Local"
+}
+</code></pre></details>
+<h3>main.go 在启动时注册自定义校验规则</h3>
+<p>在现有启动流程中导入 <code>validation</code> 包，并在任何参数校验之前调用一次 <code>validation.Register()</code>；注册失败则退出。下面的完整示例保留配置加载、数据库连接、雪花发号器与原有路由，实施时应合并保留工程中的其他新增内容。JWT 参数及密钥由 <code>conf.Load()</code> 在启动阶段验证；登录路由保持公开。</p>
+<details class="code-file"><summary><span class="file-mode">替换完整文件</span><code class="file-path">main.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-main" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-main" data-file="main.go" data-kind="replace">package main
+
+import (
+	"log"
+
+	"SolarNotesAdminAPI/conf"
+	"SolarNotesAdminAPI/controller/v1/admin"
+	"SolarNotesAdminAPI/db"
+	"SolarNotesAdminAPI/middleware"
+	"SolarNotesAdminAPI/snowflake"
+	"SolarNotesAdminAPI/validation"
+
+	"github.com/gin-gonic/gin"
+)
+
+// main 加载配置、注册请求校验规则并初始化数据库与雪花发号器，再注册中间件和登录路由。
+// 配置与基础设施初始化失败时退出；登录路由保持公开，以便尚无 JWT 的客户端登录。
+func main() {
+	err := conf.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := validation.Register(); err != nil {
+		log.Fatalf("注册自定义请求校验规则失败: %v", err)
+	}
+	configInstance := conf.Get()
+
+	err = db.Connect(configInstance.Database)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = snowflake.InitSnowflake(configInstance.Snowflake.NodeID)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	router := gin.Default()
+	router.Use(middleware.Cors())
+
+	v1 := router.Group("/v1")
+
+	{
+		v1.POST("/admin/login", admin.Login)
+	}
+
+	router.Run("0.0.0.0:" + configInstance.Service.Port)
+}
+</code></pre></details>
+<p>当前 CORS 中间件先处理 OPTIONS，开发环境可回应 Authorization 请求头的预检。本文未加入 Cookie 或刷新令牌机制，因此不用为这套登录代码额外开启凭据 Cookie 支持。</p>
+</section><section id="authentication" aria-labelledby="authentication-title"><div class="section-label">11 / IMPLEMENTATION</div><h2 id="authentication-title">与后续鉴权中间件的衔接点</h2>
+<p>本份代码实现的是登录与 JWT 工具。后续受保护路由需要把 JWT 验证、数据库状态检查和业务权限连接起来；下面是调用约束，不是已经注册的中间件文件。</p>
+<pre><code>提取 Authorization: Bearer JWT
+  → ParseAdminToken(raw, options)
+      ErrExpiredToken：TokenExpired()，返回 code 20003，停止请求
+      ErrInvalidToken：InvalidToken()，返回 code 20004，停止请求
+      配置或基础设施错误：内部错误，不能伪装成过期
+  → 按已验证的管理员 ID 查询当前 token_hash
+      记录不存在、摘要为空或不匹配：InvalidToken()，停止请求
+      数据库错误：DBError()，停止请求
+  → 认证通过，传递可信管理员身份
+  → 业务处理器继续校验操作权限</code></pre>
+<details class="code-file" open><summary><span class="file-mode">JSON 示例</span><code class="file-path">后续受保护接口的过期响应 · HTTP 200</code></summary><div class="code-toolbar"><button type="button" data-copy="code-expired-json" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-expired-json" data-file="后续受保护接口的过期响应 · HTTP 200" data-kind="json">{
+  "code": 20003,
+  "message": "登录已过期，请重新登录",
+  "data": {}
+}
+</code></pre></details>
+<p>前端从 <code>data.admin.access_token</code> 获取登录令牌，并固定加 Bearer 头；不解析 JWT 计时。受保护请求返回过期或无效业务码时，清理登录状态并跳转前端登录页。数据库故障与网络故障分别处理。</p>
+<p>退出时清空摘要，改密时在同一事务中更新密码哈希并清空摘要。状态提交后，下一次完整鉴权拒绝所有旧 JWT；已经在执行的请求不会自动撤回。后续接入时还应按已确认方案处理退出与新登录并发的顺序。</p>
+<div class="note"><p>只部署登录函数，并不能让其他 API 自动受到保护。本轮也没有实现退出、改密、刷新令牌或角色权限接口。这里给出明确的接入顺序，以便下一阶段复用相同工具和错误码。</p></div></section><section id="verification" aria-labelledby="verification-title"><div class="section-label">12 / IMPLEMENTATION</div><h2 id="verification-title">测试代码、验证结果与手动联调</h2><div class="note"><p><strong>临时副本验证已通过：</strong>编译覆盖 14 个包，42 项测试及子测试通过。其中包含 10 个 Gin 参数绑定场景，以及 5 个登录场景（部分使用内存 SQLite）。验证未启动应用服务、未连接本地 MySQL、未写入真实管理员数据。</p></div>
+<p>下面三份文件是可复用的基础测试，验证已知 SHA-256 值、JWT ID 回读、令牌校验、YAML 配置和成功响应层级。参数绑定与登录场景为临时副本中的补充验证；实际 MySQL 行为仍需单独联调。</p>
+<details class="code-file"><summary><span class="file-mode">测试参考文件</span><code class="file-path">auth/auth_test.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-test-auth" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-test-auth" data-file="auth/auth_test.go" data-kind="test">package auth
+
+import (
+	"bytes"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+// testOptions 返回测试专用的签发参数与固定密钥，使工具测试不依赖运行配置或数据库。
+// 固定字节密钥只用于测试，实际运行使用对应环境 YAML 中配置的随机密钥。
+func testOptions() JWTOptions {
+	return JWTOptions{
+		Issuer: "SolarNotesAdminAPI", Audience: "SolarNotesAdminWeb",
+		Lifetime: 7 * 24 * time.Hour, SigningKey: bytes.Repeat([]byte{7}, 32),
+	}
+}
+
+// TestPasswordDigest 使用 t 报告测试结果，检查已知摘要、正确密码、错误密码和损坏摘要。
+func TestPasswordDigest(t *testing.T) {
+	const expected = "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92"
+	if SHA256Hex("123456") != expected {
+		t.Fatal("SHA-256 hexadecimal encoding does not match the known value")
+	}
+	if ok, err := MatchSHA256("123456", expected); err != nil || !ok {
+		t.Fatal("correct password rejected")
+	}
+	if ok, err := MatchSHA256("654321", expected); err != nil || ok {
+		t.Fatal("incorrect password accepted")
+	}
+	if _, err := MatchSHA256("123456", "broken"); !errors.Is(err, ErrInvalidHash) {
+		t.Fatal("invalid database digest was not detected")
+	}
+}
+
+// TestIssueAndParse 验证同一账号两次签发的令牌不同，且大整数 ID 能完整解析回读。
+func TestIssueAndParse(t *testing.T) {
+	const adminID int64 = 2119659239906480128
+	options := testOptions()
+	first, err := IssueAdminToken(adminID, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := IssueAdminToken(adminID, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatal("two logins produced the same token")
+	}
+	actual, err := ParseAdminToken(first, options)
+	if err != nil || actual != adminID {
+		t.Fatal("administrator ID did not round-trip")
+	}
+}
+
+// TestTokenValidation 按表列场景检查 JWT 校验与错误分类，通过 t.Run 隔离各子测试。
+func TestTokenValidation(t *testing.T) {
+	options := testOptions()
+	// cases 使用匿名结构体列出各令牌场景，字段分别控制声明、算法、密钥与预期结果。
+	cases := []struct {
+		// name 是子测试名称，说明当前要验证的令牌场景。
+		name string
+		// edit 可选地修改标准声明，用于构造过期或缺少字段等场景。
+		edit func(*jwt.RegisteredClaims)
+		// method 指定签名算法；nil 时使用正常的 HS256。
+		method jwt.SigningMethod
+		// wrongKey 为 true 时改用另一把密钥签名，模拟验签失败。
+		wrongKey bool
+		// want 是预期的解析错误；nil 表示验证成功。
+		want error
+	}{
+		{name: "valid"},
+		{name: "expired", edit: func(c *jwt.RegisteredClaims) {
+			c.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-time.Minute))
+		}, want: ErrExpiredToken},
+		{name: "expired-and-wrong-issuer", edit: func(c *jwt.RegisteredClaims) {
+			c.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-time.Minute))
+			c.Issuer = "another-issuer"
+		}, want: ErrInvalidToken},
+		{name: "expired-and-bad-subject", edit: func(c *jwt.RegisteredClaims) {
+			c.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-time.Minute))
+			c.Subject = "not-an-id"
+		}, want: ErrInvalidToken},
+		{name: "missing-exp", edit: func(c *jwt.RegisteredClaims) {
+			c.ExpiresAt = nil
+		}, want: ErrInvalidToken},
+		{name: "wrong-audience", edit: func(c *jwt.RegisteredClaims) {
+			c.Audience = jwt.ClaimStrings{"another-api"}
+		}, want: ErrInvalidToken},
+		{name: "future-not-before", edit: func(c *jwt.RegisteredClaims) {
+			c.NotBefore = jwt.NewNumericDate(time.Now().Add(time.Hour))
+		}, want: ErrInvalidToken},
+		{name: "wrong-key", wrongKey: true, want: ErrInvalidToken},
+		{name: "wrong-algorithm", method: jwt.SigningMethodHS512, want: ErrInvalidToken},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			now := time.Now()
+			claims := jwt.RegisteredClaims{
+				Issuer: options.Issuer, Subject: "2119659239906480128",
+				Audience: jwt.ClaimStrings{options.Audience}, ID: "test-unique-id",
+				IssuedAt:  jwt.NewNumericDate(now.Add(-time.Minute)),
+				ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+			}
+			if tc.edit != nil {
+				tc.edit(&amp;claims)
+			}
+			method := tc.method
+			if method == nil {
+				method = jwt.SigningMethodHS256
+			}
+			key := options.SigningKey
+			if tc.wrongKey {
+				key = bytes.Repeat([]byte{8}, 32)
+			}
+			raw, err := jwt.NewWithClaims(method, claims).SignedString(key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = ParseAdminToken(raw, options)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("got %v; want %v", err, tc.want)
+			}
+		})
+	}
+}
+</code></pre></details><details class="code-file"><summary><span class="file-mode">测试参考文件</span><code class="file-path">conf/jwt_test.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-test-conf" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-test-conf" data-file="conf/jwt_test.go" data-kind="test">package conf
+
+import (
+	"bytes"
+	"encoding/base64"
+	"strings"
+	"testing"
+	"time"
+
+	"go.yaml.in/yaml/v3"
+)
+
+// TestJWTConfiguration 检查 YAML 密钥绑定、解码、有效期转换及返回密钥副本的隔离性。
+func TestJWTConfiguration(t *testing.T) {
+	key := bytes.Repeat([]byte{9}, 32)
+	source := "jwt:\n" +
+		"  issuer: SolarNotesAdminAPI\n" +
+		"  audience: SolarNotesAdminWeb\n" +
+		"  expire_seconds: 604800\n" +
+		"  secret: \"" + base64.StdEncoding.EncodeToString(key) + "\"\n"
+
+	// 与启动流程一致，按 Config 的 YAML 标签绑定，并拒绝未知字段。
+	var config Config
+	decoder := yaml.NewDecoder(strings.NewReader(source))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&amp;config); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.JWT.validate(); err != nil {
+		t.Fatal(err)
+	}
+	if config.JWT.Lifetime() != 7*24*time.Hour {
+		t.Fatal("incorrect lifetime")
+	}
+	copied := config.JWT.SigningKey()
+	copied[0] = 0
+	if !bytes.Equal(config.JWT.SigningKey(), key) {
+		t.Fatal("signing key was modified through returned slice")
+	}
+}
+
+// TestJWTInvalidConfiguration 检查 YAML 密钥缺失、编码无效、长度不足及无效有效期。
+func TestJWTInvalidConfiguration(t *testing.T) {
+	validKey := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))
+	// cases 使用匿名结构体配对场景名称、YAML 密钥值与待校验有效期。
+	cases := []struct {
+		// name 标识子测试场景，secret 提供要写入 JWT.Secret 的 Base64 字符串。
+		name, secret string
+		// seconds 是待校验的有效秒数，包含正常、零值与超出时长范围的情况。
+		seconds int64
+	}{
+		{"missing-key", "", 604800},
+		{"invalid-base64", "!invalid!", 604800},
+		{"short-key", base64.StdEncoding.EncodeToString([]byte("short")), 604800},
+		{"zero-lifetime", validKey, 0},
+		{"overflow-lifetime", validKey, 1&lt;&lt;63 - 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			config := JWT{
+				Issuer: "SolarNotesAdminAPI", Audience: "SolarNotesAdminWeb",
+				ExpireSeconds: tc.seconds, Secret: tc.secret,
+			}
+			if err := config.validate(); err == nil {
+				t.Fatal("invalid configuration accepted")
+			}
+		})
+	}
+}
+</code></pre></details><details class="code-file"><summary><span class="file-mode">测试参考文件</span><code class="file-path">resp_body/resp_body_test.go</code></summary><div class="code-toolbar"><button type="button" data-copy="code-test-response" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-test-response" data-file="resp_body/resp_body_test.go" data-kind="test">package resp_body
+
+import (
+	"encoding/json"
+	"errors"
+	"reflect"
+	"testing"
+
+	respAdmin "SolarNotesAdminAPI/param/resp/v1/admin"
+)
+
+// TestLoginResponseContract 检查实际序列化结果是否符合既定 JSON 层级、字段和字符串 ID 约定。
+func TestLoginResponseContract(t *testing.T) {
+	response := &amp;RespBody{}
+	response.Success(map[string]any{"admin": &amp;respAdmin.LoginAdminResp{
+		ID: "2119659239906480128", Username: "admin", AccessToken: "example.jwt.token",
+	}})
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual, expected any
+	if err := json.Unmarshal(encoded, &amp;actual); err != nil {
+		t.Fatal(err)
+	}
+	const golden = `{"code":200,"message":"success","data":{"admin":{"id":"2119659239906480128","username":"admin","access_token":"example.jwt.token"}}}`
+	if err := json.Unmarshal([]byte(golden), &amp;expected); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatal("response does not match the agreed JSON contract")
+	}
+}
+
+// TestFailureDataIsObject 检查错误业务码、空对象 data，并确认内部错误细节没有直接输出。
+func TestFailureDataIsObject(t *testing.T) {
+	// cases 使用匿名结构体配对错误响应方法与预期业务码。
+	cases := []struct {
+		// name 是当前错误响应场景的子测试名称。
+		name string
+		// apply 调用要测试的响应方法，修改传入的 RespBody。
+		apply func(*RespBody)
+		// code 是调用响应方法后应得到的业务错误码。
+		code int
+	}{
+		{"credentials", (*RespBody).LoginCredentialError, 20001},
+		{"changed", (*RespBody).LoginStateChanged, 20002},
+		{"expired", (*RespBody).TokenExpired, 20003},
+		{"invalid-token", (*RespBody).InvalidToken, 20004},
+		{"database", func(r *RespBody) { r.DBError(errors.New("internal detail")) }, 10201},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			response := &amp;RespBody{}
+			tc.apply(response)
+			if response.Code != tc.code || response.Data == nil || len(response.Data) != 0 {
+				t.Fatal("failure must contain the expected code and an empty data object")
+			}
+			if response.Message == "internal detail" {
+				t.Fatal("internal error leaked")
+			}
+		})
+	}
+}
+</code></pre></details>
+<h3>后续落地代码后执行</h3>
+<pre><code>go test ./...
+go run .</code></pre>
+<p>启动前需在对应环境的 YAML 中填写 JWT 参数与有效的 <code>jwt.secret</code>，并保持已有数据库服务可用。上面是合并完整示例后执行的命令；本文只更新文档，不会自动写入工程代码。</p>
+<h3>手动调用真实登录接口</h3>
+<p>将占位符替换为管理员原始密码。默认端口按当前开发配置写为 4060；真实部署使用 HTTPS。手动登录会更新当前管理员的 token_hash，使之前的令牌失效。</p>
+<details class="code-file" open><summary><span class="file-mode">命令示例</span><code class="file-path">手动联调命令 · 后续实施后执行</code></summary><div class="code-toolbar"><button type="button" data-copy="code-curl" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-curl" data-file="手动联调命令 · 后续实施后执行" data-kind="command">curl --request POST 'http://127.0.0.1:4060/v1/admin/login' \
+  --header 'Content-Type: application/json' \
+  --data '{"admin":{"username":"admin","password":"&lt;原始密码&gt;"}}'
+</code></pre></details>
+<p>成功后在本地用 <code>auth.SHA256Hex</code> 计算返回令牌的摘要，再用摘要替换下面 SQL 的占位符。查询只返回长度与比较结果，不需要把完整 JWT 作为 SQL 参数发送给数据库。</p>
+<details class="code-file" open><summary><span class="file-mode">只读 SQL</span><code class="file-path">只读核验 SQL · 用令牌的 SHA-256 摘要替换占位符</code></summary><div class="code-toolbar"><button type="button" data-copy="code-verify-sql" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-verify-sql" data-file="只读核验 SQL · 用令牌的 SHA-256 摘要替换占位符" data-kind="sql">SELECT
+    CAST(id AS CHAR) AS id,
+    name,
+    CHAR_LENGTH(token_hash) AS token_hash_length,
+    token_hash = '&lt;expected_sha256_hex&gt;' AS token_hash_matches
+FROM admin
+WHERE name = 'admin';
+</code></pre></details>
+<h3>仍需真实数据库联调确认的行为</h3>
+<ul><li>正确密码登录后，返回 JWT 的摘要与数据库一致；密码错误不改变现有令牌。</li><li>用户名大小写严格依赖当前 name 列规则，Admin 不匹配仅存在的 admin。</li><li>密码验证与写摘要之间发生改密时，条件更新未命中，返回 20002。</li><li>重复登录覆盖旧摘要；真实路由接入鉴权后，旧令牌、清空摘要及过期令牌均被拒绝。</li></ul>
+<p>这些数据库与受保护路由行为没有在本轮文档任务中执行。临时副本编译和纯代码测试通过，不等于本地服务已经实现或验证了全部登录鉴权功能。</p>
+</section><section id="handoff" aria-labelledby="handoff-title"><div class="section-label">13 / IMPLEMENTATION</div><h2 id="handoff-title">文件落地清单与依据</h2>
+<div class="table-wrap"><table><thead><tr><th>处理方式</th><th>文件</th></tr></thead><tbody>
+<tr><td>新增</td><td>conf/jwt.go、auth/hash.go、auth/jwt_options.go、auth/admin_claims.go、auth/token.go、validation/validation.go、sys_error/database_error.go、sys_error/internal_error.go、sys_error/admin_error.go。</td></tr>
+<tr><td>按本文完整实现修改</td><td>model/admin.go、biz/admin.go、resp_body/resp_body.go、controller/v1/admin/admin.go、db/connect.go、main.go。</td></tr>
+<tr><td>局部追加</td><td>conf/config.go 中 JWT 字段与校验；开发、生产 YAML 中 jwt 段及 secret，示例 YAML 只保留空 secret 模板。</td></tr>
+<tr><td>沿用</td><td>带 notblank 标签的请求 LoginReq、响应 LoginResp / LoginAdminResp，以及当前登录路由。</td></tr>
+<tr><td>依赖</td><td>引入 golang-jwt/jwt/v5 v5.3.1，未来实施时更新 go.mod / go.sum。</td></tr>
+<tr><td>测试参考</td><td>auth/auth_test.go、conf/jwt_test.go、resp_body/resp_body_test.go。</td></tr>
+</tbody></table></div>
+<p>阅读顺序可以按章节从配置向 Controller 推进；每个完整文件都能独立复制。建议按分层合并后整体测试，避免只复制 Controller 或只新增 JWT 配置而遗漏其他依赖。</p>
+<h3>参考资料</h3>
+<ol><li><a href="admin-login-design.html">本工程已确认的登录实现方案</a>：本文接口、分层与错误语义的依据。</li>
+<li><a href="https://github.com/golang-jwt/jwt/releases/tag/v5.3.1">golang-jwt v5.3.1 发布记录</a>：本例锁定的依赖版本。</li>
+<li><a href="https://pkg.go.dev/github.com/golang-jwt/jwt/v5">golang-jwt v5 API</a>：声明、签发、解析与验证选项。</li>
+<li><a href="https://github.com/golang-jwt/jwt/blob/v5.3.1/errors.go">JWT v5.3.1 错误包装源码</a>、<a href="https://github.com/golang-jwt/jwt/blob/v5.3.1/validator.go">声明校验源码</a>：混合错误分类的依据。</li>
+<li><a href="https://gorm.io/docs/conventions.html">GORM 命名约定</a>、<a href="https://gorm.io/docs/update.html">条件更新说明</a>：单数表名、列映射和 RowsAffected。</li>
+<li><a href="https://gorm.io/docs/logger.html">GORM Logger</a>：参数化 SQL 日志。</li></ol>
+</section><footer>SolarNotesAdminAPI · 登录功能代码实现文档 · 2026-11-09 · 单文件 HTML，无外部脚本、字体或图片依赖。</footer>
+</main></div><script>
+"use strict";
+(() => {
+  const files = [...document.querySelectorAll('details.code-file')];
+  const expand = document.getElementById('expand-all');
+  const collapse = document.getElementById('collapse-all');
+  expand.hidden = false;
+  collapse.hidden = false;
+  expand.addEventListener('click', () => files.forEach(file => { file.open = true; }));
+  collapse.addEventListener('click', () => files.forEach(file => { file.open = false; }));
+  document.querySelectorAll('[data-copy]').forEach(button => {
+    button.hidden = false;
+    button.addEventListener('click', async () => {
+      const status = button.nextElementSibling;
+      try {
+        const value = document.getElementById(button.dataset.copy).textContent;
+        await navigator.clipboard.writeText(value);
+        status.textContent = '已复制';
+      } catch {
+        status.textContent = '浏览器未允许复制，请手动选中代码复制';
+      }
+    });
+  });
+  let beforePrint = null;
+  window.addEventListener('beforeprint', () => {
+    beforePrint = files.map(file => file.open);
+    files.forEach(file => { file.open = true; });
+  });
+  window.addEventListener('afterprint', () => {
+    if (beforePrint) files.forEach((file,index) => { file.open = beforePrint[index]; });
+    beforePrint = null;
+  });
+})();
+</script></body></html>

@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="SolarNotesAdminAPI 登录审查问题修复文档：JWT 有效期、登录限流、HTTPS 和错误日志。">
+<title>登录功能 · 审查问题修复指南 · Solar Notes</title>
+<style>
+:root{color-scheme:light;--paper:#f3f6f2;--ink:#1d302a;--muted:#5e7068;--line:#dce5dc;--green:#21644c;--soft:#e7f1e8;--amber:#846013;--warm:#fbf2db;--blue:#275e7a;--mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:24px}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.82 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+a{color:var(--green);text-underline-offset:4px;overflow-wrap:anywhere}a:hover{color:#103d2b}:focus-visible{outline:3px solid #4485ae;outline-offset:3px}[hidden]{display:none!important}
+.skip{position:absolute;top:-80px;left:20px;background:white;padding:10px 16px;z-index:4}.skip:focus{top:12px}
+.page{width:min(1350px,100%);margin:auto;display:grid;grid-template-columns:228px minmax(0,1fr);gap:54px;padding:40px 38px 80px}.sidebar{position:sticky;top:28px;align-self:start;max-height:calc(100vh - 56px);overflow:auto}
+.brand{font-size:12px;font-weight:800;letter-spacing:.1em;color:var(--green)}.brand::before{content:"";display:inline-block;width:12px;height:12px;border:3px solid var(--green);border-radius:50%;margin-right:8px;vertical-align:-1px}.sidebar p{font-size:13px;color:var(--muted);line-height:1.7}.sidebar nav{display:grid;gap:3px;margin-top:22px}.sidebar nav a{display:flex;gap:12px;padding:7px 9px;border-radius:7px;text-decoration:none;color:var(--muted);font-size:14px}.sidebar nav a:hover{background:var(--soft);color:var(--green)}.sidebar nav span{color:var(--green);font:12px/2 var(--mono)}.side-note{border-top:1px solid var(--line);padding-top:16px;margin-top:22px}
+main{min-width:0}.eyebrow,.section-label{color:var(--green);font:700 12px/1.5 var(--mono);letter-spacing:.1em}.hero h1{font-size:clamp(33px,4vw,48px);line-height:1.25;letter-spacing:-.03em;margin:16px 0}.lede{font-size:18px;color:var(--muted);max-width:820px}.tags{display:flex;flex-wrap:wrap;gap:8px;margin:24px 0}.tag{border:1px solid var(--line);border-radius:30px;padding:4px 11px;font-size:12px;background:white;color:var(--muted)}
+.thesis{background:#194b39;color:#fff;border-radius:14px;padding:22px 25px}.thesis p{margin:0}.thesis strong{color:#d4f5dc}.page-tools{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:20px 0}.page-tools button,.code-toolbar button{font:inherit;font-size:13px;border:1px solid var(--green);border-radius:7px;background:white;color:var(--green);cursor:pointer;padding:6px 12px}.page-tools button:hover,.code-toolbar button:hover{background:var(--soft)}
+section{padding-top:42px;margin-top:10px}h2{font-size:27px;line-height:1.4;letter-spacing:-.02em;margin:8px 0 20px}h3{font-size:19px;line-height:1.55;margin:27px 0 10px}p{margin:12px 0}code{font:.87em/1.7 var(--mono);background:#e8f0e8;border-radius:4px;padding:2px 5px;overflow-wrap:anywhere}pre{margin:14px 0;padding:19px 22px;background:#1d3029;color:#e5efe6;border-radius:10px;overflow-x:auto;tab-size:2;font:13px/1.75 var(--mono)}pre code{font:inherit;background:transparent;color:inherit;padding:0;border-radius:0;overflow-wrap:normal}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:18px 0}.card{border:1px solid var(--line);background:#fffefa;border-radius:12px;padding:18px 19px}.card .n{color:var(--green);font:12px/1.5 var(--mono)}.card h3{margin:6px 0;font-size:16px}.card p{font-size:14px;color:var(--muted);margin:0}
+.note{background:var(--soft);border-left:3px solid var(--green);border-radius:0 8px 8px 0;padding:15px 18px;margin:20px 0;font-size:14px}.note.warning{background:var(--warm);border-color:var(--amber)}.note p{margin:0}.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:white;margin:18px 0}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;vertical-align:top;padding:12px 15px;border-bottom:1px solid var(--line);min-width:105px}th{color:var(--green);background:#edf3ec;font-weight:650}tr:last-child td{border-bottom:0}ul,ol{padding-left:23px}li{margin:8px 0}.small{font-size:13px;color:var(--muted)}
+details.code-file{border:1px solid var(--line);background:#fffefa;border-radius:10px;overflow:hidden;margin:18px 0}details.code-file summary{padding:14px 17px;cursor:pointer;font-weight:650;overflow-wrap:anywhere;line-height:1.7}.file-mode{display:inline-block;font-size:11px;padding:2px 7px;border-radius:5px;background:var(--soft);color:var(--green);margin-right:9px;font-weight:500}.file-path{font:13px/1.7 var(--mono)}.code-toolbar{display:flex;align-items:center;gap:10px;padding:9px 16px;border-top:1px solid var(--line)}.copy-feedback{font-size:12px;color:var(--muted)}.code-file pre{margin:0;border-radius:0;font-size:12.5px}footer{margin-top:45px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+@media(max-width:1050px){.page{gap:27px;padding-left:24px;padding-right:24px;grid-template-columns:185px minmax(0,1fr)}}@media(max-width:800px){.page{display:block;padding:24px 20px 55px}.sidebar{position:static;max-height:none;margin-bottom:32px}.sidebar nav{display:flex;gap:5px;overflow-x:auto;margin-top:15px;padding-bottom:8px}.sidebar nav a{white-space:nowrap;border:1px solid var(--line);padding:5px 9px}.sidebar p,.side-note{display:none}.grid{grid-template-columns:1fr}h2{font-size:24px}}
+@media(max-width:520px){pre{padding:16px;font-size:12px}th,td{padding:10px 12px}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}@media print{body{background:white;color:black;font-size:11pt}.page{display:block;width:100%;padding:0}.sidebar,.page-tools,.code-toolbar,.skip{display:none!important}.thesis{background:#eee;color:black}.thesis strong{color:black}section{padding-top:20px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f3f3;color:black;font-size:8pt}.code-file{overflow:visible!important}.table-wrap{overflow:visible}a{color:black}}
+</style></head><body><a class="skip" href="#content">跳到正文</a><div class="page">
+<aside class="sidebar" aria-label="文档导航"><div class="brand">SOLAR NOTES / DOCS</div><p>登录审查后的修复方案，按文件逐项实施。</p><nav aria-label="目录">
+<a href="#overview"><span>01</span>复查结果与范围</a><a href="#expiry"><span>02</span>JWT 有效期校验</a><a href="#rate"><span>03</span>登录请求限流</a><a href="#proxy"><span>04</span>HTTPS 与可信代理</a><a href="#logging"><span>05</span>错误诊断与响应</a><a href="#tests"><span>06</span>测试与验证</a><a href="#handoff"><span>07</span>实施清单与参考</a></nav>
+<p class="side-note">独立 HTML · 可复制代码<br><a href="admin-login-implementation.html">返回登录实现文档 ↗</a></p></aside>
+<main id="content"><header class="hero"><div class="eyebrow">CODE REVIEW / REMEDIATION GUIDE</div><h1>登录功能<br>审查问题修复指南</h1><p class="lede">承接已修复的登录响应问题，逐文件说明有效期校验、登录入口保护和可诊断的错误日志。</p><div class="tags"><span class="tag">对应审查项 4 / 5 / 6</span><span class="tag">单实例示例</span><span class="tag">HTTP 200 + 业务码</span><span class="tag">仅交付 HTML</span></div>
+<div class="thesis"><p><strong>先完成配置校验，再保护登录入口，最后完善诊断。</strong> 示例保持现有分层、请求与成功响应约定；代码均供审阅和后续手动实施。</p></div><div class="page-tools"><button type="button" id="expand-all" hidden>展开全部代码</button><button type="button" id="collapse-all" hidden>折叠全部代码</button><span class="small">每个代码块也可以单独展开和复制。</span></div><noscript><p class="small">未启用 JavaScript 时，仍可展开代码并手动复制。</p></noscript></header>
+
+<section id="overview" aria-labelledby="overview-title"><div class="section-label">01 / REVIEW</div><h2 id="overview-title">复查结果与本文范围</h2>
+<p>当前工程中，模型已将 <code>name</code> 映射到 <code>model.Admin.Name</code>，业务实体也在保存摘要后返回签发的完整 JWT。隔离测试验证了用户名、JWT 验签、管理员 ID 和数据库摘要之间的关系。</p>
+<div class="grid"><div class="card"><div class="n">04 / CONFIG</div><h3>有效期先校验</h3><p>拒绝零、负数和转换后溢出的秒数，在启动时发现配置错误。</p></div><div class="card"><div class="n">05 / ACCESS</div><h3>限制登录请求</h3><p>按来源 IP 限流；在同机反向代理示例中通过 HTTPS 访问。</p></div><div class="card"><div class="n">06 / DIAGNOSIS</div><h3>区分错误原因</h3><p>日志记录受控诊断类别，对外响应使用统一错误消息。</p></div></div>
+<p>建议按本文顺序合并所有代码后再编译。限流示例使用单个 Go 进程和同机 Nginx；域名、证书和端口需要按真实部署替换。其他拓扑应先重新确定可信代理与限流存储。</p>
+<div class="note"><p>本文件是修复方案，不会自动修改工程、配置或数据库。实施时保留你在对应文件中新增的其他功能；本文展示的完整文件以当前工程快照为基础。</p></div></section>
+
+<section id="expiry" aria-labelledby="expiry-title"><div class="section-label">02 / CONFIGURATION</div><h2 id="expiry-title">在启动时验证 JWT 有效期</h2>
+<p><code>ExpireSeconds</code> 必须大于 0，并且转换为 <code>time.Duration</code> 纳秒时不能溢出。下面在原有的签发方、受众和密钥检查之外，增加秒数边界；仍通过 <code>conf.Load()</code> 的既有调用链触发。</p>
+<p>当前开发环境的一周配置保持 <code>604800</code> 秒。最大可转换值用于防止数值溢出，不代表建议把 JWT 设置为那么长的有效期；生产环境需要配置有效的 JWT 参数和密钥。</p>
+<details class="code-file"><summary><span class="file-mode">替换完整文件</span><span class="file-path">conf/jwt.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-jwt" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-jwt" data-file="conf/jwt.go">package conf
+
+import (
+	&quot;encoding/base64&quot;
+	&quot;errors&quot;
+	&quot;strings&quot;
+	&quot;time&quot;
+)
+
+// JWT 保存签发方、受众、有效期及用于验签的密钥配置。
+type JWT struct {
+	Issuer        string `yaml:&quot;issuer&quot;`         // Issuer JWT的ISS,标识允许签发令牌的后端
+	Audience      string `yaml:&quot;audience&quot;`       // Audience JWT的AUD,标识令牌预期服务的前端
+	ExpireSeconds int64  `yaml:&quot;expire_seconds&quot;` // ExpireSeconds JWT的过期时间,单位秒
+	Secret        string `yaml:&quot;secret&quot;`         // Secret JWT的签名密钥
+	signingKey    []byte // signingKey 从 Secret 解码出的原始字节(私有字段不参与YAML绑定)
+}
+
+// validate 本方法用于验证JWT配置的合法性,若合法则将秘钥保存至 signingKey 字段中,若不合法则返回错误并阻止配置加载
+func (j *JWT) validate() error {
+	j.Issuer = strings.TrimSpace(j.Issuer)
+	j.Audience = strings.TrimSpace(j.Audience)
+
+	if j.Issuer == &quot;&quot; || j.Audience == &quot;&quot; {
+		return errors.New(&quot;JWT配置错误: Issuer和Audience不能为空字符串&quot;)
+	}
+
+	// time.Duration 使用有符号 64 位纳秒，先检查秒数再转换，避免溢出。
+	const maxExpireSeconds int64 = (1&lt;&lt;63 - 1) / int64(time.Second)
+	if j.ExpireSeconds &lt;= 0 || j.ExpireSeconds &gt; maxExpireSeconds {
+		return errors.New(&quot;JWT配置错误: expire_seconds 必须是有效的正秒数&quot;)
+	}
+
+	encoded := strings.TrimSpace(j.Secret)
+	if encoded == &quot;&quot; {
+		return errors.New(&quot;JWT配置错误: Secret不能为空字符串&quot;)
+	}
+
+	key, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return errors.New(&quot;JWT配置错误: Secret必须是Base64编码的字符串&quot;)
+	}
+
+	if len(key) &lt; 32 {
+		return errors.New(&quot;JWT配置错误: Secret解码后的字节长度必须至少为32字节&quot;)
+	}
+
+	// 复制字节切片以避免外部修改
+	j.signingKey = append([]byte(nil), key...)
+
+	return nil
+}
+
+// SigningKey 本方法用于获取JWT的签名密钥,为防止调用方修改签名密钥,返回的字节切片为签名密钥的副本
+func (j *JWT) SigningKey() []byte {
+	return append([]byte(nil), j.signingKey...)
+}
+
+// Lifetime 本方法用于获取JWT的有效期,单位为time.Duration
+func (j *JWT) Lifetime() time.Duration {
+	return time.Duration(j.ExpireSeconds) * time.Second
+}
+</code></pre></details>
+<p>下面的测试覆盖零、负数、一周、最大可转换值和溢出值。测试密钥只是固定字节，不读取开发或生产密钥。</p><details class="code-file"><summary><span class="file-mode">新增测试参考文件</span><span class="file-path">conf/login_hardening_test.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-jwt-test" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-jwt-test" data-file="conf/login_hardening_test.go">package conf
+
+import (
+	&quot;bytes&quot;
+	&quot;encoding/base64&quot;
+	&quot;testing&quot;
+	&quot;time&quot;
+)
+
+// TestJWTExpiryValidation 覆盖零、负数、一周、最大值和溢出边界。
+func TestJWTExpiryValidation(t *testing.T) {
+	const maxSeconds int64 = (1&lt;&lt;63 - 1) / int64(time.Second)
+	cases := []struct {
+		name    string // name 是场景名称。
+		seconds int64  // seconds 是测试的有效秒数。
+		valid   bool   // valid 表示此秒数是否应该通过校验。
+	}{
+		{&quot;zero&quot;, 0, false},
+		{&quot;negative&quot;, -1, false},
+		{&quot;one week&quot;, 604800, true},
+		{&quot;maximum&quot;, maxSeconds, true},
+		{&quot;overflow&quot;, maxSeconds + 1, false},
+	}
+	for _, tc := range cases {
+		j := &amp;JWT{
+			Issuer:        &quot;test-issuer&quot;,
+			Audience:      &quot;test-audience&quot;,
+			ExpireSeconds: tc.seconds,
+			Secret:        base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)),
+		}
+		err := j.validate()
+		if (err == nil) != tc.valid {
+			t.Errorf(&quot;%s: valid=%v, error=%v&quot;, tc.name, tc.valid, err)
+		}
+		if err == nil &amp;&amp; j.Lifetime() &lt;= 0 {
+			t.Errorf(&quot;%s: lifetime must stay positive&quot;, tc.name)
+		}
+	}
+}
+</code></pre></details></section>
+
+<section id="rate" aria-labelledby="rate-title"><div class="section-label">03 / RATE LIMIT</div><h2 id="rate-title">为登录路由增加频率限制</h2>
+<p>示例按 <code>c.ClientIP()</code> 计数：<strong>同一 IP 在滚动 60 秒内最多放行 5 个登录请求</strong>。无论请求 JSON 是否有效、登录是否成功，只要到达登录路由就计入；当前全局 CORS 中间件会先结束 OPTIONS 预检。</p>
+<p>第 6 个请求由中间件直接返回，不进入 Controller、Biz 或数据库。沿用项目的 HTTP 200 与业务码约定，新增 <code>20005</code>；前端应将它作为“稍后再试”处理，不应当当作令牌过期。</p><details class="code-file" open><summary><span class="file-mode">JSON 示例</span><span class="file-path">登录请求触发限流 · HTTP 200</span></summary><div class="code-toolbar"><button type="button" data-copy="code-rate-response" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-rate-response" data-file="登录请求触发限流 · HTTP 200">{
+  &quot;code&quot;: 20005,
+  &quot;message&quot;: &quot;请求过于频繁，请稍后再试&quot;,
+  &quot;data&quot;: {}
+}
+</code></pre></details>
+<div class="note warning"><p>这是单进程、按 IP 的示例：重启会清空计数，共用出口 IP 的用户会共享额度；多个实例各自计数，分布式来源也能分别计数。多实例应改用共享限流存储或网关，并结合账号与网络层策略。示例最多保留 10,000 个客户端，达到上限时暂时拒绝新客户端，直到过期记录被清理。</p></div>
+<h3>新增限流中间件</h3><p>限流次数与窗口是示例常量，可根据访问规模调整；可信代理地址在下一节通过 YAML 配置。记录在请求进入时清理，不启动后台 goroutine；互斥锁保护并发计数。</p><details class="code-file" open><summary><span class="file-mode">新增完整文件</span><span class="file-path">middleware/login_rate_limiter.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-limiter" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-limiter" data-file="middleware/login_rate_limiter.go">package middleware
+
+import (
+	&quot;net/http&quot;
+	&quot;sync&quot;
+	&quot;time&quot;
+
+	&quot;SolarNotesAdminAPI/resp_body&quot;
+	&quot;github.com/gin-gonic/gin&quot;
+)
+
+const (
+	// loginWindow 是统计登录请求次数的滚动时间窗口。
+	loginWindow = time.Minute
+	// loginMaxRequests 是单个客户端在窗口内允许的最大请求数。
+	loginMaxRequests = 5
+	// loginMaxClients 限制内存中同时跟踪的客户端数量。
+	loginMaxClients = 10000
+)
+
+// LoginRateLimiter 在单个进程内按客户端 IP 限制登录请求。
+type LoginRateLimiter struct {
+	// mu 保护 requests 和 lastCleanup，允许多个请求并发访问。
+	mu sync.Mutex
+	// requests 为每个客户端保存当前窗口内已放行请求的时间。
+	requests map[string][]time.Time
+	// lastCleanup 记录上次移除过期客户端记录的时间。
+	lastCleanup time.Time
+}
+
+// NewLoginRateLimiter 创建可供登录路由共享的限流器实例。
+func NewLoginRateLimiter() *LoginRateLimiter {
+	return &amp;LoginRateLimiter{requests: make(map[string][]time.Time)}
+}
+
+// Handle 是 Gin 中间件；超过限制时返回统一业务响应并停止后续处理。
+func (l *LoginRateLimiter) Handle(c *gin.Context) {
+	c.Header(&quot;Cache-Control&quot;, &quot;no-store&quot;)
+	if !l.allow(c.ClientIP()) {
+		body := &amp;resp_body.RespBody{}
+		body.LoginRateLimit()
+		c.AbortWithStatusJSON(http.StatusOK, body)
+		return
+	}
+	c.Next()
+}
+
+// allow 判断客户端是否可以发起一次登录请求；成功时记录该次请求。
+func (l *LoginRateLimiter) allow(clientIP string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	// 取时间也放在锁内，确保同一 IP 的记录按时间顺序追加。
+	now := time.Now()
+	cutoff := now.Add(-loginWindow)
+	if l.lastCleanup.IsZero() || now.Sub(l.lastCleanup) &gt;= loginWindow {
+		for ip, history := range l.requests {
+			if len(history) == 0 {
+				delete(l.requests, ip)
+				continue
+			}
+			lastRequestTime := history[len(history)-1]
+			if !lastRequestTime.After(cutoff) {
+				delete(l.requests, ip)
+			}
+		}
+		l.lastCleanup = now
+	}
+
+	history := l.requests[clientIP]
+	first := 0
+	for first &lt; len(history) &amp;&amp; !history[first].After(cutoff) {
+		first++
+	}
+	history = history[first:]
+	if len(history) &gt;= loginMaxRequests {
+		return false
+	}
+
+	// 到达容量时拒绝新客户端，等待过期记录清理；已有客户端仍按窗口判断。
+	if _, exists := l.requests[clientIP]; !exists &amp;&amp; len(l.requests) &gt;= loginMaxClients {
+		return false
+	}
+	l.requests[clientIP] = append(history, now)
+	return true
+}
+</code></pre></details>
+<h3>扩展响应码并固定内部错误文案</h3><p>下面的完整响应文件新增 <code>LoginRateLimitCode</code> 和 <code>LoginRateLimit()</code>。同时落实第 05 节的对外错误策略：<code>DBError(err)</code> 与 <code>InternalError(err)</code> 的调用形式保留，但响应不再包含任意底层错误文本。</p><details class="code-file"><summary><span class="file-mode">替换完整文件</span><span class="file-path">resp_body/resp_body.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-response" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-response" data-file="resp_body/resp_body.go">package resp_body
+
+// 响应码规则:
+// 200: 成功响应
+// 500: 服务端内部错误
+//
+// 10XXX: 系统级别错误
+//
+//	101XX: 参数校验错误
+//	102XX: 数据库错误
+//
+// 20XXX: 具体业务错误
+const (
+	SuccessCode              = 200 // SuccessCode 成功响应状态码
+	ServiceInternalErrorCode = 500 // ServiceInternalErrorCode 服务端内部错误状态码
+
+	ValidateErrorCode = 10101 // ValidateErrorCode 参数校验错误状态码
+	DBErrorCode       = 10201 // DBErrorCode 数据库错误状态码
+
+	LoginCredentialErrorCode = 20001 // LoginCredentialErrorCode 账号或密码错误状态码
+	LoginStateChangedCode    = 20002 // LoginStateChangedCode 登录期间凭据状态变化,需重新登录状态码
+	TokenExpiredCode         = 20003 // TokenExpiredCode token过期状态码
+	InvalidTokenCode         = 20004 // InvalidTokenCode token无效状态码
+	LoginRateLimitCode       = 20005 // LoginRateLimitCode 登录请求触发访问频率限制
+)
+
+// RespBody 是项目统一的 JSON 响应体。
+type RespBody struct {
+	Code    int            `json:&quot;code&quot;`    // Code 响应体中的状态码部分
+	Message string         `json:&quot;message&quot;` // Message 响应体中的消息部分
+	Data    map[string]any `json:&quot;data&quot;`    // Data 响应体中的数据部分 即有效载荷
+}
+
+// Success 本方法用于设置响应成功响应体
+func (r *RespBody) Success(data map[string]any) {
+	r.Code = SuccessCode
+	r.Message = &quot;success&quot;
+	r.Data = data
+}
+
+// failure 本方法用于统一设置错误业务码/消息/空对象 Data ,避免输出 null 或遗留成功数据
+func (r *RespBody) failure(code int, message string) {
+	r.Code = code
+	r.Message = message
+	r.Data = map[string]any{}
+}
+
+// ValidateError 本方法用于设置参数校验错误时的响应体
+func (r *RespBody) ValidateError(err error) {
+	message := &quot;请求参数不合法&quot;
+	if err != nil {
+		message = err.Error()
+	}
+	r.failure(ValidateErrorCode, message)
+}
+
+// DBError 本方法用于设置数据库错误时的响应体
+func (r *RespBody) DBError(_ error) {
+	r.failure(DBErrorCode, &quot;数据库操作失败，请稍后重试&quot;)
+}
+
+// InternalError 本方法用于生成统一内部错误响应体,不向前端输出底层错误
+func (r *RespBody) InternalError(_ error) {
+	r.failure(ServiceInternalErrorCode, &quot;服务暂时不可用，请稍后重试&quot;)
+}
+
+// LoginRateLimit 返回登录请求过于频繁时的业务码和统一消息。
+func (r *RespBody) LoginRateLimit() {
+	r.failure(LoginRateLimitCode, &quot;请求过于频繁，请稍后再试&quot;)
+}
+
+// LoginCredentialError 本方法用于设置账号不存在/密码不正确时的响应体,不向前端输出具体错误
+func (r *RespBody) LoginCredentialError() {
+	r.failure(LoginCredentialErrorCode, &quot;账号或密码错误&quot;)
+}
+
+// LoginStateChangedError 本方法用于设置验证用户名密码后,管理员记录的条件更新未命中时的响应体,不向前端输出具体错误
+func (r *RespBody) LoginStateChangedError() {
+	r.failure(LoginStateChangedCode, &quot;账号状态已变化,请重新登录&quot;)
+}
+
+// TokenExpiredError 本方法用于设置token过期时的响应体
+func (r *RespBody) TokenExpiredError() {
+	r.failure(TokenExpiredCode, &quot;登录已过期,请重新登录&quot;)
+}
+
+// InvalidToken 本方法用于生成令牌无效或已撤销响应时的响应体
+func (r *RespBody) InvalidToken() {
+	r.failure(InvalidTokenCode, &quot;登录状态无效,请重新登录&quot;)
+}
+</code></pre></details>
+<p>限流中间件和登录 Controller 都设置 <code>Cache-Control: no-store</code>，覆盖被限流、参数错误、业务错误与成功响应。</p></section>
+
+<section id="proxy" aria-labelledby="proxy-title"><div class="section-label">04 / DEPLOYMENT</div><h2 id="proxy-title">绑定本机，并明确可信代理</h2>
+<pre><code>浏览器 -- HTTPS --> 同机 Nginx -- HTTP / 127.0.0.1 --> Gin
+                      覆盖转发头                      登录限流 → Controller</code></pre>
+<h3>在服务配置中声明可信代理</h3>
+<p>在现有 <code>conf.Service</code> 中增加代理地址列表。<code>Config</code> 已经持有 <code>Service</code>，无需新增配置对象；配置加载器启用了严格字段检查，因此应先增加结构体字段，再在 YAML 中填写。</p>
+<details class="code-file"><summary><span class="file-mode">替换完整文件</span><span class="file-path">conf/service.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-service" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-service" data-file="conf/service.go">package conf
+
+// Service 服务相关配置。
+type Service struct {
+	Port           string   `yaml:&quot;port&quot;`            // Port 服务监听端口。
+	TrustedProxies []string `yaml:&quot;trusted_proxies&quot;` // TrustedProxies 可信代理 IP 或 CIDR 列表，空列表表示不信任代理。
+}
+</code></pre></details>
+<p>以下 YAML 仅展示需要合并到<strong>已有</strong> <code>service</code> 段的配置；保留原有 <code>port</code> 和其他配置，不要再创建一个同名的 <code>service</code> 段。示例配置文件与无代理的本地开发环境使用空列表：</p>
+<details class="code-file"><summary><span class="file-mode">合并配置片段</span><span class="file-path">config.example.yaml / config.dev.yaml · 直接连接 Go 服务</span></summary><div class="code-toolbar"><button type="button" data-copy="code-proxy-dev" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-proxy-dev" data-file="config.example.yaml / config.dev.yaml">service:
+  # 保留现有的 port 等配置
+  trusted_proxies: []
+</code></pre></details>
+<p>生产环境如果采用本文的同机 Nginx 示例，并且 Nginx 实际通过 <code>127.0.0.1</code> 连接 Go 服务，可以填写：</p>
+<details class="code-file"><summary><span class="file-mode">合并配置片段</span><span class="file-path">config.prod.yaml · 同机 Nginx 示例</span></summary><div class="code-toolbar"><button type="button" data-copy="code-proxy-prod" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-proxy-prod" data-file="config.prod.yaml">service:
+  # 保留现有的 port 等配置
+  trusted_proxies:
+    - &quot;127.0.0.1&quot;
+</code></pre></details>
+<p><code>trusted_proxies</code> 可以填写多个 IP 或 CIDR 网段。空列表、未配置或配置为 <code>null</code> 时，传给 Gin 的列表为空，等同于不信任任何代理；同机代理环境必须填写实际代理地址，否则多个用户可能被识别为同一个代理 IP。地址格式有误时，<code>SetTrustedProxies</code> 会返回错误并阻止服务启动。</p>
+<p>下面的 <code>main.go</code> 从配置中读取可信代理，并将同一个限流器实例挂到登录路由。它仍是<strong>同机代理</strong>版本：Go 服务只监听 <code>127.0.0.1</code>。服务与代理不在同一台主机或容器网络命名空间时，需要按实际网络调整监听地址及可信代理。</p><details class="code-file"><summary><span class="file-mode">替换完整文件</span><span class="file-path">main.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-main" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-main" data-file="main.go">package main
+
+import (
+	&quot;SolarNotesAdminAPI/conf&quot;
+	&quot;SolarNotesAdminAPI/controller/v1/admin&quot;
+	&quot;SolarNotesAdminAPI/db&quot;
+	&quot;SolarNotesAdminAPI/middleware&quot;
+	&quot;SolarNotesAdminAPI/snowflake&quot;
+	&quot;SolarNotesAdminAPI/validation&quot;
+	&quot;log&quot;
+
+	&quot;github.com/gin-gonic/gin&quot;
+)
+
+// main 加载配置与依赖，注册校验和登录路由，并启动仅供代理访问的服务。
+func main() {
+	err := conf.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+	configInstance := conf.Get()
+
+	err = validation.Register()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = db.Connect(configInstance.Database)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = snowflake.InitSnowflake(configInstance.Snowflake.NodeID)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	router := gin.Default()
+	// 根据配置识别可信代理；空列表表示不信任代理。
+	if err := router.SetTrustedProxies(configInstance.Service.TrustedProxies); err != nil {
+		log.Fatalf(&quot;可信代理配置失败: %v&quot;, err)
+	}
+	router.Use(middleware.Cors())
+
+	v1 := router.Group(&quot;/v1&quot;)
+	loginLimiter := middleware.NewLoginRateLimiter()
+
+	{
+		v1.POST(&quot;/admin/login&quot;, loginLimiter.Handle, admin.Login)
+	}
+
+	// 本服务只在回环地址监听；公网 HTTPS 由前置代理提供。
+	if err := router.Run(&quot;127.0.0.1:&quot; + configInstance.Service.Port); err != nil {
+		log.Fatalf(&quot;HTTP 服务启动失败: %v&quot;, err)
+	}
+}
+</code></pre></details>
+<div class="note warning"><p>没有反向代理、浏览器直接连接 Go 服务的本地开发环境，应将 <code>trusted_proxies</code> 设为空列表，让 Gin 使用连接的对端 IP；不能信任客户端自行发送的转发头。实际有代理时也只填写明确可信的代理地址，并确保代理覆盖而非透传客户端提供的头。信任 <code>127.0.0.1</code> 也意味着信任从本机直接连接 Go 服务的其他进程，应结合实际部署限制访问。</p></div>
+<h3>Nginx HTTPS 模板</h3><p>这是放在 Nginx <code>http</code> 上下文中的服务配置示例，不是工程文件。将域名、证书和端口替换为实际值；证书应由客户端信任，Go 端口须与 <code>service.port</code> 一致。前端必须从一开始就使用 HTTPS 发送登录请求。</p><details class="code-file"><summary><span class="file-mode">部署模板</span><span class="file-path">Nginx · HTTPS 代理示例</span></summary><div class="code-toolbar"><button type="button" data-copy="code-nginx" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-nginx" data-file="Nginx · HTTPS 代理示例"># 示例：与 Go 服务同机运行的 HTTPS 反向代理。
+# 按部署环境替换域名、证书路径和 Go 服务端口。
+server {
+    listen 443 ssl;
+    server_name admin-api.example.com;
+
+    ssl_certificate     /etc/nginx/tls/admin-api.fullchain.pem;
+    ssl_certificate_key /etc/nginx/tls/admin-api.key;
+
+    location / {
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $remote_addr;
+        proxy_set_header X-Forwarded-Proto  $scheme;
+        proxy_pass http://127.0.0.1:4060;
+    }
+}
+</code></pre></details>
+<p>本示例用 <code>$remote_addr</code> 覆盖客户端传来的 <code>X-Forwarded-For</code> 和 <code>X-Real-IP</code>。如果 Nginx 前面还有负载均衡器或 CDN，<code>$remote_addr</code> 可能是上游代理；应先按实际可信网段配置真实客户端 IP，不能直接信任来自公网的转发头。</p>
+<p>配置真实证书后，在部署环境执行 <code>nginx -t</code> 再按该环境的流程加载配置；本文没有启动或修改 Nginx，也没有验证实际证书和生产网络。</p></section>
+
+<section id="logging" aria-labelledby="logging-title"><div class="section-label">05 / DIAGNOSTICS</div><h2 id="logging-title">让日志帮助定位错误</h2>
+<p><code>DatabaseError.Error()</code> 与 <code>InternalError.Error()</code> 只返回统一消息，直接打印它们看不到原因。下面读取包装的 <code>Cause</code>，将已知原因映射成受控类别；MySQL 错误记录数字错误码，不输出驱动返回的原始消息。</p>
+<div class="table-wrap"><table><thead><tr><th>原因</th><th>日志中的信息</th></tr></thead><tbody><tr><td>MySQL 错误</td><td><code>reason=mysql mysql_code=...</code></td></tr><tr><td>请求取消 / 超时</td><td><code>context_canceled</code> / <code>context_deadline_exceeded</code></td></tr><tr><td>网络错误</td><td><code>reason=network</code></td></tr><tr><td>密码摘要格式无效</td><td><code>reason=invalid_password_hash</code></td></tr><tr><td>其他原因</td><td><code>reason=unclassified</code> 和 Go 类型；不包含任意错误文本。</td></tr></tbody></table></div>
+<p>未知错误只记录类型，可能仍不足以定位具体故障；可继续为可信的错误类型增加分类，或通过受控、脱敏的内部诊断渠道排查。不要把请求体、密码、JWT、密钥、连接字符串或未经审查的原始错误直接写入日志。</p>
+<h3>新增登录故障诊断文件</h3><p>新增 <code>diagnostics</code> 包，负责登录故障的分类和安全日志；Controller 负责请求处理和响应组装，<code>sys_error</code> 继续负责错误类型定义。<code>LogAdminLoginFailure</code> 需要被 Controller 调用，因此导出；<code>describeLoginCause</code> 仅供包内使用。</p>
+<p><code>github.com/go-sql-driver/mysql</code> 已是工程的间接依赖；此文件直接引用它。合并后执行 <code>go mod tidy</code>，将依赖声明更新为直接依赖。</p><details class="code-file" open><summary><span class="file-mode">新增完整文件</span><span class="file-path">diagnostics/admin_login.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-log" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-log" data-file="diagnostics/admin_login.go">package diagnostics
+
+import (
+	&quot;context&quot;
+	&quot;errors&quot;
+	&quot;fmt&quot;
+	&quot;log&quot;
+	&quot;net&quot;
+
+	&quot;SolarNotesAdminAPI/auth&quot;
+	&quot;SolarNotesAdminAPI/sys_error&quot;
+	&quot;github.com/go-sql-driver/mysql&quot;
+)
+
+// LogAdminLoginFailure 根据包装类型记录管理员登录故障的安全诊断信息。
+// 不记录原始错误文本、凭据、JWT 或请求体。
+func LogAdminLoginFailure(err error) {
+	var dbErr *sys_error.DatabaseError
+	var internalErr *sys_error.InternalError
+	switch {
+	case errors.As(err, &amp;dbErr):
+		log.Printf(&quot;管理员登录失败: category=database %s&quot;, describeLoginCause(dbErr.Cause))
+	case errors.As(err, &amp;internalErr):
+		log.Printf(&quot;管理员登录失败: category=internal %s&quot;, describeLoginCause(internalErr.Cause))
+	default:
+		log.Printf(&quot;管理员登录失败: category=unknown %s&quot;, describeLoginCause(err))
+	}
+}
+
+// describeLoginCause 将底层原因映射成受控类别，MySQL 错误只包含数字错误码。
+// 对未知错误仅保留类型；需要更多细节时应通过受控、脱敏的内部诊断途径排查。
+func describeLoginCause(cause error) string {
+	switch {
+	case cause == nil:
+		return &quot;reason=none&quot;
+	case errors.Is(cause, context.Canceled):
+		return &quot;reason=context_canceled&quot;
+	case errors.Is(cause, context.DeadlineExceeded):
+		return &quot;reason=context_deadline_exceeded&quot;
+	case errors.Is(cause, auth.InvalidHashErr):
+		return &quot;reason=invalid_password_hash&quot;
+	}
+
+	var mysqlErr *mysql.MySQLError
+	if errors.As(cause, &amp;mysqlErr) &amp;&amp; mysqlErr != nil {
+		return fmt.Sprintf(&quot;reason=mysql mysql_code=%d&quot;, mysqlErr.Number)
+	}
+	var networkErr *net.OpError
+	if errors.As(cause, &amp;networkErr) &amp;&amp; networkErr != nil {
+		return &quot;reason=network&quot;
+	}
+	return fmt.Sprintf(&quot;reason=unclassified cause_type=%T&quot;, cause)
+}
+</code></pre></details>
+<h3>Controller 调用诊断包并组装响应</h3><p>Controller 保留 <code>errors.As()</code> 对数据库错误的识别，向 <code>diagnostics.LogAdminLoginFailure()</code> 和响应方法传入原始 <code>err</code>。第 03 节中的响应方法会使用统一文案，因此外层包装中的细节不会进入响应。</p><details class="code-file"><summary><span class="file-mode">替换完整文件</span><span class="file-path">controller/v1/admin/admin.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-controller" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-controller" data-file="controller/v1/admin/admin.go">package admin
+
+import (
+	&quot;SolarNotesAdminAPI/biz&quot;
+	&quot;SolarNotesAdminAPI/diagnostics&quot;
+	&quot;SolarNotesAdminAPI/param/req/v1/admin&quot;
+	respAdmin &quot;SolarNotesAdminAPI/param/resp/v1/admin&quot;
+	&quot;SolarNotesAdminAPI/resp_body&quot;
+	&quot;SolarNotesAdminAPI/sys_error&quot;
+	&quot;errors&quot;
+	&quot;net/http&quot;
+	&quot;strconv&quot;
+
+	&quot;github.com/gin-gonic/gin&quot;
+)
+
+// Login 本函数用于处理管理员登录行为
+func Login(c *gin.Context) {
+	c.Header(&quot;Cache-Control&quot;, &quot;no-store&quot;)
+	req := &amp;admin.LoginReq{}
+	respBody := &amp;resp_body.RespBody{}
+
+	err := c.ShouldBindJSON(req)
+	if err != nil {
+		respBody.ValidateError(err)
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	adminBiz := &amp;biz.Admin{}
+	err = adminBiz.Login(c.Request.Context(), req)
+	if err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, sys_error.InvalidLoginRequestErr):
+			respBody.ValidateError(err)
+		case errors.Is(err, sys_error.InvalidCredentialsErr):
+			respBody.LoginCredentialError()
+		case errors.Is(err, sys_error.LoginStateChangedErr):
+			respBody.LoginStateChangedError()
+		case errors.As(err, &amp;dbErr):
+			diagnostics.LogAdminLoginFailure(err)
+			respBody.DBError(err)
+		default:
+			diagnostics.LogAdminLoginFailure(err)
+			respBody.InternalError(err)
+		}
+
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	loginResp := &amp;respAdmin.LoginResp{}
+	loginResp.Admin = &amp;respAdmin.LoginAdminResp{
+		ID:          strconv.FormatInt(adminBiz.ID, 10),
+		Username:    adminBiz.Username,
+		AccessToken: adminBiz.AccessToken,
+	}
+
+	data := map[string]interface{}{
+		&quot;admin&quot;: loginResp.Admin,
+	}
+	respBody.Success(data)
+
+	c.JSON(http.StatusOK, respBody)
+}
+</code></pre></details></section>
+
+<section id="tests" aria-labelledby="tests-title"><div class="section-label">06 / VERIFICATION</div><h2 id="tests-title">先运行自动测试，再验证代理</h2>
+<p>本方案已在临时副本中编译，并对有效期边界、登录成功和失败、JWT 验签、限流窗口与并发、可信代理和日志脱敏进行验证；<code>go test -race ./middleware</code> 通过。下方测试文件可在实施时加入工程，不依赖真实数据库或配置密钥。</p>
+<p>限流测试中的代理 IP 是用于模拟请求的固定测试数据；应用运行时的可信代理列表仍由 YAML 提供。实施后还应核对：空列表时忽略伪造的转发头；配置实际可信代理后识别其转发的客户端 IP；填写无效 IP 或 CIDR 时启动报错。</p>
+<details class="code-file"><summary><span class="file-mode">新增测试参考文件</span><span class="file-path">middleware/login_hardening_test.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-limit-test" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-limit-test" data-file="middleware/login_hardening_test.go">package middleware
+
+import (
+	&quot;encoding/json&quot;
+	&quot;fmt&quot;
+	&quot;net/http&quot;
+	&quot;net/http/httptest&quot;
+	&quot;sync&quot;
+	&quot;sync/atomic&quot;
+	&quot;testing&quot;
+	&quot;time&quot;
+
+	&quot;SolarNotesAdminAPI/resp_body&quot;
+	&quot;github.com/gin-gonic/gin&quot;
+)
+
+// testAllowedLogin 标记请求已经到达登录处理器，不访问真实数据库。
+func testAllowedLogin(c *gin.Context) { c.Status(http.StatusNoContent) }
+
+// testConcurrentAttempt 执行一次并发限流判断并记录放行数量。
+func testConcurrentAttempt(l *LoginRateLimiter, wg *sync.WaitGroup, accepted *atomic.Int32) {
+	defer wg.Done()
+	if l.allow(&quot;same-client&quot;) {
+		accepted.Add(1)
+	}
+}
+
+// TestLoginLimiterWindowAndCleanup 验证次数限制、窗口过期和客户端上限。
+func TestLoginLimiterWindowAndCleanup(t *testing.T) {
+	l := NewLoginRateLimiter()
+	for i := 0; i &lt; loginMaxRequests; i++ {
+		if !l.allow(&quot;one&quot;) {
+			t.Fatal(&quot;blocked too soon&quot;)
+		}
+	}
+	if l.allow(&quot;one&quot;) {
+		t.Fatal(&quot;sixth request must be blocked&quot;)
+	}
+	if !l.allow(&quot;two&quot;) {
+		t.Fatal(&quot;a different client was blocked&quot;)
+	}
+	l.requests[&quot;one&quot;] = []time.Time{time.Now().Add(-loginWindow - time.Second)}
+	if !l.allow(&quot;one&quot;) {
+		t.Fatal(&quot;expired window was not released&quot;)
+	}
+
+	full := NewLoginRateLimiter()
+	full.lastCleanup = time.Now()
+	for i := 0; i &lt; loginMaxClients; i++ {
+		full.requests[fmt.Sprint(i)] = []time.Time{time.Now()}
+	}
+	if full.allow(&quot;new-client&quot;) || len(full.requests) != loginMaxClients {
+		t.Fatal(&quot;client limit should reject a new client without growing the map&quot;)
+	}
+	for key := range full.requests {
+		full.requests[key] = []time.Time{time.Now().Add(-loginWindow - time.Second)}
+	}
+	full.lastCleanup = time.Now().Add(-loginWindow - time.Second)
+	if !full.allow(&quot;new-client&quot;) {
+		t.Fatal(&quot;expired clients were not cleaned&quot;)
+	}
+}
+
+// TestLoginLimiterConcurrent 验证同一客户端并发请求不会突破限制。
+func TestLoginLimiterConcurrent(t *testing.T) {
+	l := NewLoginRateLimiter()
+	var accepted atomic.Int32
+	var wg sync.WaitGroup
+	for i := 0; i &lt; 100; i++ {
+		wg.Add(1)
+		go testConcurrentAttempt(l, &amp;wg, &amp;accepted)
+	}
+	wg.Wait()
+	if accepted.Load() != int32(loginMaxRequests) {
+		t.Fatalf(&quot;accepted %d requests&quot;, accepted.Load())
+	}
+}
+
+// TestLoginLimiterResponseAndUntrustedIP 验证响应约定和不可信转发头不能绕过限制。
+func TestLoginLimiterResponseAndUntrustedIP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	if err := router.SetTrustedProxies(nil); err != nil {
+		t.Fatal(err)
+	}
+	l := NewLoginRateLimiter()
+	router.POST(&quot;/login&quot;, l.Handle, testAllowedLogin)
+	for i := 0; i &lt;= loginMaxRequests; i++ {
+		req := httptest.NewRequest(&quot;POST&quot;, &quot;/login&quot;, nil)
+		req.RemoteAddr = &quot;198.51.100.10:4321&quot;
+		req.Header.Set(&quot;X-Forwarded-For&quot;, fmt.Sprintf(&quot;192.0.2.%d&quot;, i+1))
+		out := httptest.NewRecorder()
+		router.ServeHTTP(out, req)
+		if out.Header().Get(&quot;Cache-Control&quot;) != &quot;no-store&quot; {
+			t.Fatal(&quot;missing no-store&quot;)
+		}
+		if i &lt; loginMaxRequests &amp;&amp; out.Code != http.StatusNoContent {
+			t.Fatalf(&quot;status=%d&quot;, out.Code)
+		}
+		if i == loginMaxRequests {
+			var body resp_body.RespBody
+			if out.Code != http.StatusOK {
+				t.Fatalf(&quot;status=%d&quot;, out.Code)
+			}
+			if err := json.Unmarshal(out.Body.Bytes(), &amp;body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Code != resp_body.LoginRateLimitCode || body.Data == nil || len(body.Data) != 0 {
+				t.Fatalf(&quot;unexpected rate-limit response: %+v&quot;, body)
+			}
+		}
+	}
+}
+
+// TestLoginLimiterTrustedProxy 验证可信代理转发的不同客户端分别计数。
+func TestLoginLimiterTrustedProxy(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	if err := router.SetTrustedProxies([]string{&quot;127.0.0.1&quot;}); err != nil {
+		t.Fatal(err)
+	}
+	limiter := NewLoginRateLimiter()
+	router.POST(&quot;/login&quot;, limiter.Handle, testAllowedLogin)
+	for i := 0; i &lt;= loginMaxRequests; i++ {
+		req := httptest.NewRequest(&quot;POST&quot;, &quot;/login&quot;, nil)
+		req.RemoteAddr = &quot;127.0.0.1:4321&quot;
+		req.Header.Set(&quot;X-Forwarded-For&quot;, &quot;198.51.100.10&quot;)
+		out := httptest.NewRecorder()
+		router.ServeHTTP(out, req)
+		if i == loginMaxRequests &amp;&amp; out.Code != http.StatusOK {
+			t.Fatal(&quot;proxied client should be rate limited&quot;)
+		}
+	}
+	req := httptest.NewRequest(&quot;POST&quot;, &quot;/login&quot;, nil)
+	req.RemoteAddr = &quot;127.0.0.1:4321&quot;
+	req.Header.Set(&quot;X-Forwarded-For&quot;, &quot;198.51.100.11&quot;)
+	out := httptest.NewRecorder()
+	router.ServeHTTP(out, req)
+	if out.Code != http.StatusNoContent {
+		t.Fatal(&quot;another proxied client should have its own quota&quot;)
+	}
+}
+</code></pre></details><details class="code-file"><summary><span class="file-mode">新增测试参考文件</span><span class="file-path">diagnostics/admin_login_test.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-log-test" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-log-test" data-file="diagnostics/admin_login_test.go">package diagnostics
+
+import (
+	&quot;bytes&quot;
+	&quot;errors&quot;
+	&quot;log&quot;
+	&quot;strings&quot;
+	&quot;testing&quot;
+
+	&quot;SolarNotesAdminAPI/sys_error&quot;
+	&quot;github.com/go-sql-driver/mysql&quot;
+)
+
+// TestLoginErrorDiagnostics 验证错误码可用于排查，敏感错误文本不会进入日志。
+func TestLoginErrorDiagnostics(t *testing.T) {
+	var output bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&amp;output)
+	defer log.SetOutput(previous)
+
+	LogAdminLoginFailure(&amp;sys_error.DatabaseError{
+		Cause: &amp;mysql.MySQLError{Number: 1146, Message: &quot;DO_NOT_LOG&quot;},
+	})
+	if !strings.Contains(output.String(), &quot;mysql_code=1146&quot;) || strings.Contains(output.String(), &quot;DO_NOT_LOG&quot;) {
+		t.Fatal(&quot;database log leaked the message or omitted the code&quot;)
+	}
+	output.Reset()
+	LogAdminLoginFailure(&amp;sys_error.InternalError{Cause: errors.New(&quot;DO_NOT_LOG&quot;)})
+	if strings.Contains(output.String(), &quot;DO_NOT_LOG&quot;) {
+		t.Fatal(&quot;internal log leaked the error message&quot;)
+	}
+}
+</code></pre></details>
+<pre><code>go mod tidy
+go test ./...
+go test -race ./middleware</code></pre>
+<h3>无需数据库写入的限流验证</h3><p>以下命令仅适用于合并方案后的本机开发服务。等待一个完整窗口后执行：由于 JSON 不完整，前 5 次返回参数校验业务码 <code>10101</code>，第 6 次返回 <code>20005</code>。如果已有请求计数，触发限流的次数会更早。</p><details class="code-file"><summary><span class="file-mode">命令示例</span><span class="file-path">本机参数校验与限流验证</span></summary><div class="code-toolbar"><button type="button" data-copy="code-manual" hidden>复制代码</button><span class="copy-feedback" role="status"></span></div><pre><code id="code-manual" data-file="本机参数校验与限流验证"># 本地开发验证：先等待一个完整窗口，确保此客户端没有遗留计数。
+# 故意发送不完整 JSON：不会查询数据库，也不会更改管理员令牌。
+for attempt in 1 2 3 4 5 6; do
+  curl --silent --show-error --request POST &#x27;http://127.0.0.1:4060/v1/admin/login&#x27; \
+    --header &#x27;Content-Type: application/json&#x27; --data &#x27;{&#x27;
+  printf &#x27;\n&#x27;
+done
+</code></pre></details>
+<p>HTTPS 验证需要在实际代理、域名和可信证书就绪后进行；还应验证前端识别 <code>20005</code>、来源 IP 配置正确，且外部无法直接访问 Go 服务端口。不要以关闭证书验证的方式作为上线验收。</p>
+<div class="note"><p>真实 MySQL 的登录联调会写入管理员 <code>token_hash</code> 并替换当前令牌，应在明确该影响后再操作。本次文档验证没有连接真实 MySQL 或更新管理员数据。</p></div></section>
+
+<section id="handoff" aria-labelledby="handoff-title"><div class="section-label">07 / HANDOFF</div><h2 id="handoff-title">落地清单与参考资料</h2>
+<div class="table-wrap"><table><thead><tr><th>方式</th><th>文件或工作</th></tr></thead><tbody>
+<tr><td>替换 / 合并</td><td><code>conf/jwt.go</code>、<code>conf/service.go</code>、<code>resp_body/resp_body.go</code>、<code>controller/v1/admin/admin.go</code>、<code>main.go</code>；在现有配置文件的 <code>service</code> 段加入 <code>trusted_proxies</code>。</td></tr>
+<tr><td>新增</td><td><code>middleware/login_rate_limiter.go</code>、<code>diagnostics/admin_login.go</code>。</td></tr>
+<tr><td>测试参考</td><td><code>conf/login_hardening_test.go</code>、<code>middleware/login_hardening_test.go</code>、<code>diagnostics/admin_login_test.go</code>。</td></tr>
+<tr><td>部署配置</td><td>填写生产 JWT 配置；按实际域名、证书、端口和 <code>service.trusted_proxies</code> 配置 HTTPS 与代理；前端处理业务码 <code>20005</code>。</td></tr>
+</tbody></table></div>
+<p>官方参考：<a href="https://gin-gonic.com/en/docs/server-config/trusted-proxies/">Gin 可信代理</a>、<a href="https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_set_header">Nginx 代理请求头</a>、<a href="https://nginx.org/en/docs/http/ngx_http_ssl_module.html">Nginx HTTPS</a>、<a href="https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html">OWASP 日志记录建议</a>。</p>
+</section><footer>SolarNotesAdminAPI · 登录功能审查问题修复指南 · 单文件 HTML，无外部脚本、字体或图片依赖。</footer></main></div>
+<script>
+"use strict";
+(() => {
+  const files = [...document.querySelectorAll("details.code-file")];
+  const expand = document.getElementById("expand-all");
+  const collapse = document.getElementById("collapse-all");
+  expand.hidden = false;
+  collapse.hidden = false;
+  expand.addEventListener("click", () => files.forEach(file => { file.open = true; }));
+  collapse.addEventListener("click", () => files.forEach(file => { file.open = false; }));
+  document.querySelectorAll("[data-copy]").forEach(button => {
+    button.hidden = false;
+    button.addEventListener("click", async () => {
+      const status = button.nextElementSibling;
+      try {
+        await navigator.clipboard.writeText(document.getElementById(button.dataset.copy).textContent);
+        status.textContent = "已复制";
+      } catch {
+        status.textContent = "浏览器未允许复制，请手动选中代码复制";
+      }
+    });
+  });
+  let beforePrint = null;
+  window.addEventListener("beforeprint", () => {
+    beforePrint = files.map(file => file.open);
+    files.forEach(file => { file.open = true; });
+  });
+  window.addEventListener("afterprint", () => {
+    if (beforePrint) files.forEach((file, index) => { file.open = beforePrint[index]; });
+    beforePrint = null;
+  });
+})();
+</script></body></html>

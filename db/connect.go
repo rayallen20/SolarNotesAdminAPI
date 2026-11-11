@@ -3,10 +3,13 @@ package db
 import (
 	"SolarNotesAdminAPI/conf"
 	"fmt"
+	"log"
+	"os"
 	"time"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
 )
 
@@ -16,10 +19,21 @@ var DB *gorm.DB
 // Connect 本函数用于根据数据库配置连接数据库
 func Connect(dbConf conf.Database) error {
 	dsn := buildDSN(dbConf)
+
+	loggerConf := logger.Config{
+		SlowThreshold:             time.Second, // 慢 SQL 阈值
+		LogLevel:                  logger.Warn, // 日志级别
+		IgnoreRecordNotFoundError: true,        // 忽略ErrRecordNotFound(记录未找到)错误
+		ParameterizedQueries:      true,        // 启用参数化查询
+		Colorful:                  false,       // 彩色打印
+	}
+	queryLogger := logger.New(log.New(os.Stdout, "[gorm] ", log.LstdFlags), loggerConf)
+
 	opts := &gorm.Config{
 		NamingStrategy: schema.NamingStrategy{
 			SingularTable: true, // 全局禁用表名复数
 		},
+		Logger: queryLogger,
 	}
 
 	// Tips: gorm.Open()函数是急连接,初始化就会执行`SELECT VERSION()`,所以后续不再需要手动ping测试了

@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="SolarNotesAdminAPI 管理员登录功能实现方案：接口协议、分层职责、GORM 字段映射、JWT 签发、令牌摘要和验收场景。">
+  <title>管理员登录功能 · 实现方案 · Solar Notes</title>
+  <style>
+    :root { color-scheme: light; --paper: #f6f5f0; --card: #fffefa; --ink: #202e2a; --muted: #5b6963; --line: #dce2d8; --green: #24644c; --green-soft: #e9f1e8; --blue: #285e84; --blue-soft: #e7f0f6; --amber: #79520d; --amber-soft: #fff4dc; --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 26px; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font: 16px/1.85 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    a { color: var(--green); text-underline-offset: 4px; overflow-wrap: anywhere; }
+    a:hover { color: #103f2e; }
+    :focus-visible { outline: 3px solid var(--blue); outline-offset: 4px; }
+    [hidden] { display: none !important; }
+    .skip { position: absolute; top: -80px; left: 20px; z-index: 3; padding: 10px 18px; background: var(--card); }
+    .skip:focus { top: 12px; }
+    .page { width: min(1320px, 100%); margin: auto; display: grid; grid-template-columns: 228px minmax(0, 1fr); gap: 54px; padding: 42px 38px 80px; }
+    .sidebar { position: sticky; top: 28px; align-self: start; max-height: calc(100vh - 56px); overflow-y: auto; }
+    .brand { font-weight: 800; letter-spacing: .1em; font-size: 12px; color: var(--green); }
+    .brand-mark { display: inline-block; width: 13px; height: 13px; border: 3px solid var(--green); border-radius: 50%; margin-right: 8px; vertical-align: -1px; }
+    .sidebar p { color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .sidebar nav { margin-top: 25px; display: grid; gap: 3px; }
+    .sidebar nav a { display: flex; gap: 12px; text-decoration: none; padding: 7px 9px; border-radius: 7px; color: var(--muted); font-size: 14px; }
+    .sidebar nav a:hover { background: var(--green-soft); color: var(--green); }
+    .sidebar nav span { color: var(--green); font: 12px/2 var(--mono); }
+    .side-note { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 24px; }
+    main { min-width: 0; }
+    .eyebrow { color: var(--green); font-size: 12px; letter-spacing: .14em; font-weight: 700; }
+    h1 { font-size: clamp(32px, 4vw, 47px); line-height: 1.3; letter-spacing: -.035em; margin: 15px 0 19px; }
+    .lede { color: var(--muted); font-size: 18px; max-width: 770px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 9px; margin: 24px 0; }
+    .tag { font-size: 12px; border: 1px solid var(--line); border-radius: 30px; padding: 3px 11px; color: var(--muted); background: var(--card); }
+    .tag.review { color: var(--blue); background: var(--blue-soft); border-color: #c4d8e6; }
+    .thesis { padding: 22px 25px; background: var(--green); color: #fff; border-radius: 14px; font-size: 17px; }
+    .thesis p { margin: 0; }
+    section { padding-top: 43px; margin-top: 12px; }
+    .section-label { color: var(--green); font: 12px/1.5 var(--mono); letter-spacing: .1em; }
+    h2 { font-size: 27px; line-height: 1.45; margin: 8px 0 20px; letter-spacing: -.02em; }
+    h3 { font-size: 19px; line-height: 1.55; margin: 26px 0 10px; }
+    p { margin: 12px 0; }
+    code { font: .87em/1.7 var(--mono); background: #eaf0e7; border-radius: 4px; padding: 2px 5px; overflow-wrap: anywhere; }
+    pre { margin: 14px 0; padding: 20px 23px; background: #1e2d29; color: #e7efe6; border-radius: 10px; overflow-x: auto; tab-size: 2; font: 13px/1.8 var(--mono); }
+    pre code { font: inherit; background: transparent; color: inherit; padding: 0; border-radius: 0; overflow-wrap: normal; }
+    .code-label { margin-top: 20px; font: 12px/1.7 var(--mono); color: var(--muted); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 18px 0; }
+    .card { padding: 19px 21px; border: 1px solid var(--line); background: var(--card); border-radius: 13px; min-width: 0; }
+    .card h3 { margin: 0 0 8px; font-size: 17px; }
+    .card p { margin: 0; color: var(--muted); font-size: 14px; }
+    .note { padding: 16px 20px; border-left: 3px solid var(--green); background: var(--green-soft); margin: 20px 0; border-radius: 0 9px 9px 0; font-size: 14px; }
+    .note.proposal { background: var(--blue-soft); border-color: var(--blue); }
+    .note.amber { background: var(--amber-soft); border-color: var(--amber); }
+    .note p { margin: 0; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; margin: 18px 0; background: var(--card); }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    th, td { text-align: left; vertical-align: top; padding: 12px 15px; border-bottom: 1px solid var(--line); min-width: 115px; }
+    th { color: var(--green); font-weight: 650; background: #edf2e9; }
+    tr:last-child td { border-bottom: 0; }
+    ol, ul { padding-left: 23px; }
+    li { margin: 8px 0; }
+    .small, figcaption { color: var(--muted); font-size: 13px; }
+    .ref { font-size: 12px; white-space: nowrap; margin-left: 5px; }
+    figure { margin: 20px 0; }
+    .diagram { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 13px; padding: 17px 9px; }
+    .diagram svg { display: block; width: 100%; min-width: 850px; height: auto; }
+    .endpoint { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; }
+    .method { font: 700 13px/1.8 var(--mono); color: var(--green); background: var(--green-soft); border-radius: 5px; padding: 3px 10px; }
+    .endpoint code { background: transparent; padding: 0; font-size: 16px; }
+    .preview { border: 1px solid var(--line); border-radius: 12px; padding: 20px; background: var(--card); margin: 20px 0; }
+    .preview-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    select { font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 7px; padding: 8px 32px 8px 11px; max-width: 100%; }
+    .badge { color: var(--blue); background: var(--blue-soft); border-radius: 20px; padding: 3px 10px; font: 12px/1.8 var(--mono); }
+    details { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 14px 19px; margin: 12px 0; }
+    summary { cursor: pointer; font-weight: 650; }
+    details p { font-size: 14px; }
+    .review-list li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .review-list li:last-child { border: 0; }
+    footer { margin-top: 42px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    @media (max-width: 1050px) { .page { gap: 28px; padding-left: 24px; padding-right: 24px; grid-template-columns: 185px minmax(0, 1fr); } }
+    @media (max-width: 800px) {
+      .page { display: block; padding: 24px 20px 55px; }
+      .sidebar { position: static; max-height: none; margin-bottom: 34px; }
+      .sidebar nav { display: flex; gap: 5px; overflow-x: auto; margin-top: 15px; padding-bottom: 8px; }
+      .sidebar nav a { white-space: nowrap; padding: 5px 9px; border: 1px solid var(--line); }
+      .sidebar p, .side-note { display: none; }
+      h2 { font-size: 24px; }
+    }
+    @media (max-width: 520px) {
+      .grid { grid-template-columns: 1fr; }
+      .thesis { font-size: 16px; padding: 18px; }
+      pre { padding: 16px; font-size: 12px; }
+      th, td { padding: 10px 12px; }
+      .preview { padding: 15px; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    @media print {
+      body { background: white; color: black; font-size: 11pt; }
+      .page { display: block; padding: 0; width: 100%; }
+      .sidebar, .skip, #response-preview { display: none !important; }
+      section { padding-top: 20px; }
+      .thesis { background: #eee; color: black; }
+      pre { background: #f3f3f3; color: black; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 9pt; }
+      .diagram svg { min-width: 0; }
+      .table-wrap, .diagram { overflow: visible; }
+      tr, .card { break-inside: avoid; }
+      a { color: black; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#content">跳到正文</a>
+  <div class="page">
+    <aside class="sidebar" aria-label="文档导航">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span>SOLAR NOTES / DOCS</div>
+      <p>基于当前工程的管理员登录实现方案，供编写业务代码前审阅。</p>
+      <nav aria-label="目录">
+        <a href="#baseline"><span>01</span>现状与实现范围</a>
+        <a href="#contract"><span>02</span>登录接口约定</a>
+        <a href="#layers"><span>03</span>各层职责与调用</a>
+        <a href="#flow"><span>04</span>完整登录流程</a>
+        <a href="#database"><span>05</span>模型映射与数据库</a>
+        <a href="#tokens"><span>06</span>两个摘要与 JWT</a>
+        <a href="#lifecycle"><span>07</span>鉴权与失效规则</a>
+        <a href="#responses"><span>08</span>响应封装与前端</a>
+        <a href="#files"><span>09</span>预计文件改动</a>
+        <a href="#verification"><span>10</span>验收与测试场景</a>
+        <a href="#review"><span>11</span>请优先审阅的约定</a>
+        <a href="#references"><span>12</span>依据与参考资料</a>
+      </nav>
+      <p class="side-note">方案草案 · 2026-11-09<br>离线可读 · 可打印<br><a href="jwt-auth-flow.html">阅读 JWT 原理说明 ↗</a></p>
+    </aside>
+    <main id="content">
+      <header>
+        <div class="eyebrow">IMPLEMENTATION PROPOSAL / ADMIN LOGIN</div>
+        <h1>管理员登录功能<br>实现方案</h1>
+        <p class="lede">沿着 Controller → Biz → Model 的调用关系，把当前的参数绑定接口补充为能够验证管理员、签发 JWT 并记录当前令牌摘要的登录接口。</p>
+        <div class="meta"><span class="tag review">已按本次审阅意见修订</span><span class="tag">Gin + GORM + MySQL</span><span class="tag">PC 管理后台</span><span class="tag">每账号一枚当前有效令牌</span></div>
+        <div class="thesis"><p>登录成功的条件是：请求合法、账号密码正确、JWT 成功生成，而且 JWT 的 SHA-256 摘要已经成功写入该管理员的 <code style="background:transparent;color:inherit">token_hash</code>。满足全部条件后，再把完整 JWT 返回给前端。</p></div>
+        <p class="small">本文是下一轮实现的设计依据。当前交付物为这份 HTML；文中的接口响应、函数签名和新增文件属于方案，不能据此认为登录代码已经完成。</p>
+      </header>
+
+      <section id="baseline" aria-labelledby="baseline-title">
+        <div class="section-label">01 / BASELINE</div>
+        <h2 id="baseline-title">以现有代码和已确认的数据约定为基础</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th scope="col">位置</th><th scope="col">当前代码</th><th scope="col">需要补充的行为</th></tr></thead>
+          <tbody>
+            <tr><td><code>main.go</code></td><td>已有 <code>POST /v1/admin/login</code>，先注册 CORS。</td><td>沿用当前登录路由；接入启动时的 JWT 配置校验。</td></tr>
+            <tr><td><code>controller/v1/admin/admin.go</code></td><td>绑定参数，失败时返回包装响应；成功路径打印账号和密码。</td><td>调用业务层、组装响应；移除密码打印，补齐成功与失败分支。</td></tr>
+            <tr><td><code>biz/admin.go</code></td><td>只有 <code>Admin</code> 数据结构。</td><td>增加登录业务流程、凭据比较、JWT 签发及保存结果判断。</td></tr>
+            <tr><td><code>model/admin.go</code></td><td>只有模型字段，尚无 GORM 列映射和查询方法。</td><td>映射数据库列，按账号查管理员，按主键更新令牌摘要。</td></tr>
+            <tr><td><code>param/resp/v1/admin/login.go</code></td><td>已定义 <code>LoginResp.Admin</code> 与 <code>LoginAdminResp</code>，令牌位于管理员对象内。</td><td>直接沿用该响应结构，按 <code>data.admin</code> 层级组装。</td></tr>
+            <tr><td><code>resp_body/resp_body.go</code></td><td>已有 <code>Data map[string]any</code> 与 <code>Success(data map[string]any)</code>，成功消息为 <code>success</code>。</td><td>沿用包装器与参数类型，补充登录及后续鉴权错误；外部错误消息不直接拼接数据库内部错误。</td></tr>
+          </tbody>
+        </table></div>
+        <div class="grid">
+          <div class="card"><h3>已确认的数据约定</h3><p>表名是 <code>admin</code>；账号列是 <code>name</code>，区分大小写；密码列保存已有 SHA-256 小写十六进制摘要；<code>token_hash</code> 保存当前 JWT 的 SHA-256 摘要，空字符串表示未登录。</p></div>
+          <div class="card"><h3>本次拟实现的功能范围</h3><p>完成登录接口、接入现有响应 DTO、模型查询与条件更新、JWT 与摘要工具、配置校验。本文同时给出后续鉴权中间件的过期响应约定；退出、改密和刷新令牌接口分别后续实现。</p></div>
+        </div>
+        <p>继续使用已有管理员记录。<strong>登录不创建管理员，也不重新生成管理员主键。</strong>雪花 ID 在 Go 内使用 <code>int64</code>，在响应和 JWT 的主体声明中转成字符串。</p>
+        <div class="note"><p><strong>本次审阅已确认：</strong>前后端固定使用 Bearer；成功数据仅包含 <code>data.admin</code> 对象，内部为 <code>id / username / access_token</code>；有效期只由后端校验，前端收到过期响应后跳转登录页；Biz 接收完整请求对象；Model 沿用默认表名映射，仅保留 GORM 标签；包装器继续使用 <code>map[string]any</code>。</p></div>
+        <div class="note proposal"><p><strong>以下是待审阅的建议值：</strong>使用 HS256 签名，访问令牌有效期暂定 15 分钟；登录接口沿用当前的 HTTP 200 + 业务码风格。它们不是 JWT 强制规定，审阅后可以调整。</p></div>
+      </section>
+
+      <section id="contract" aria-labelledby="contract-title">
+        <div class="section-label">02 / API CONTRACT</div>
+        <h2 id="contract-title">接口路径与请求体沿用现有定义</h2>
+        <div class="endpoint"><span class="method">POST</span><code>/v1/admin/login</code><span class="small">公开登录接口 · Content-Type: application/json</span></div>
+        <div class="code-label">请求示例 · 密码为用户输入的原文，正式部署通过 HTTPS 传输</div>
+        <pre><code>{
+  "admin": {
+    "username": "admin",
+    "password": "&lt;用户输入的初始密码&gt;"
+  }
+}</code></pre>
+        <div class="table-wrap"><table>
+          <thead><tr><th scope="col">请求字段</th><th scope="col">约束</th><th scope="col">处理原则</th></tr></thead>
+          <tbody>
+            <tr><td><code>admin</code></td><td>必填、非 null，必须为对象。</td><td>继续使用当前指针结构与 <code>binding:"required"</code>。</td></tr>
+            <tr><td><code>admin.username</code></td><td>沿用必填、长度 5–20；建议另外拒绝全空白账号。</td><td>保持大小写，不调用 ToLower；不自动改变账号内容。</td></tr>
+            <tr><td><code>admin.password</code></td><td>沿用必填、长度 6–20。</td><td>作为原始密码接收，不 Trim、不转大小写，不要求前端先计算摘要。</td></tr>
+          </tbody>
+        </table></div>
+        <p><strong>请求中的 <code>username</code> 与数据库中的 <code>name</code> 是不同层的名称。</strong>请求格式可以保留，模型用列标签映射数据库，不需要为此修改表结构。</p>
+        <p class="small">继续使用 <code>ShouldBindJSON</code>，由 Controller 自行决定包装响应，避免绑定方法提前写入另一套 HTTP 错误格式。<a class="ref" href="https://github.com/gin-gonic/website/blob/master/src/content/docs/en/docs/binding/binding-and-validation.md">Gin 官方绑定说明 ↗</a></p>
+        <h3>按本次约定确定的成功响应</h3>
+        <pre><code>HTTP/1.1 200 OK
+Content-Type: application/json
+Cache-Control: no-store
+
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "admin": {
+      "id": "2119659239906480128",
+      "username": "admin",
+      "access_token": "&lt;完整 JWT 字符串&gt;"
+    }
+  }
+}</code></pre>
+        <p>前后端固定按 <code>Authorization: Bearer &lt;JWT&gt;</code> 通信。成功响应不额外返回令牌类型或到期时间，前端从 <code>data.admin.access_token</code> 取令牌，不解析 JWT 判断有效期，也不设置令牌过期计时器。JWT 内部仍保留 <code>exp</code>，由后端在每次鉴权时验证。</p>
+        <p><code>data</code> 的直接子项全部是对象；本接口仅有 <code>admin</code> 这个直接子对象，账号信息与令牌放在该对象内部。数据库模型中的密码哈希和令牌摘要不进入响应。后续受保护接口发现过期时，按 <a href="#expiry-response">第 07 节的过期响应约定</a> 通知前端。</p>
+        <h3>业务码与失败结果</h3>
+        <p>本草案沿用现有登录 Controller 的 HTTP 200 风格；前端用响应体 <code>code</code> 判断业务结果。未命中路由、网关错误及网络故障仍按各自机制处理。</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th scope="col">业务码</th><th scope="col">情形</th><th scope="col">对外消息 / 数据</th></tr></thead>
+          <tbody>
+            <tr><td><code>200</code></td><td>验证、签发与写库全部成功。</td><td><code>message: "success"</code>；返回 <code>data.admin</code> 对象。</td></tr>
+            <tr><td><code>10101</code>，已有</td><td>JSON 或参数校验失败。</td><td>参数不合法；<code>data: {}</code>。</td></tr>
+            <tr><td><code>20001</code>，建议新增</td><td>账号不存在，或密码不匹配。</td><td>统一“账号或密码错误”；<code>data: {}</code>。</td></tr>
+            <tr><td><code>20002</code>，建议新增</td><td>保存令牌前账号被删除或密码已变化，条件更新未命中。</td><td>账号状态已变化，请重新登录；<code>data: {}</code>。</td></tr>
+            <tr><td><code>10201</code>，已有</td><td>数据库查询或更新失败。</td><td>数据库操作失败，请稍后重试；<code>data: {}</code>。</td></tr>
+            <tr><td><code>500</code>，已有</td><td>随机值生成、JWT 签发或内部数据格式异常。</td><td>服务暂时不可用，请稍后重试；<code>data: {}</code>。</td></tr>
+          </tbody>
+        </table></div>
+        <div class="preview" id="response-preview" hidden>
+          <div class="preview-controls"><label for="response-case"><strong>响应预览</strong></label><select id="response-case">
+            <option value="success">登录成功</option><option value="invalid">参数校验失败</option><option value="credentials">账号或密码错误</option><option value="changed">账号状态已变化</option><option value="database">数据库操作失败</option><option value="internal">签发或内部处理失败</option><option value="expired">后续鉴权：令牌过期</option><option value="token-invalid">后续鉴权：令牌无效或已撤销</option>
+          </select><span class="badge">HTTP 200</span></div>
+          <div aria-live="polite" aria-atomic="true"><p class="small" id="response-note"></p><pre><code id="response-json"></code></pre></div>
+          <p class="small">这是登录及后续鉴权协议的本地预览，不发送网络请求，不生成有效令牌。后续鉴权错误码为建议值。</p>
+        </div>
+        <noscript><p class="small">响应预览需要 JavaScript；上面的静态示例与业务码表可以直接阅读。</p></noscript>
+      </section>
+
+      <section id="layers" aria-labelledby="layers-title">
+        <div class="section-label">03 / RESPONSIBILITIES</div>
+        <h2 id="layers-title">每层只承担清楚的一段职责</h2>
+        <pre><code>HTTP 请求
+  → param/req/v1/admin.LoginReq       请求形状与长度约束
+  → controller/v1/admin.Login        绑定完整请求对象，再传给 Biz
+  → biz.Admin.Login(ctx, req)        读取请求中的账号密码，执行登录
+  → model.FindAdminByName            按 name 查询数据库
+  → auth                            SHA-256、JWT、随机 jti
+  → model.UpdateAdminTokenHash       条件更新当前令牌摘要
+  → param/resp/v1/admin.LoginResp    既有响应 DTO，令牌在 Admin 内
+  → RespBody.Success(map[string]any{"admin": loginResp.Admin})</code></pre>
+        <div class="table-wrap"><table>
+          <thead><tr><th scope="col">层</th><th scope="col">负责</th><th scope="col">数据边界</th></tr></thead>
+          <tbody>
+            <tr><td>Controller</td><td>参数绑定、调用 Biz、映射业务错误与响应 DTO。</td><td>持有 Gin 上下文；不直接写 SQL、验密码或签 JWT。</td></tr>
+            <tr><td>Biz</td><td>从完整请求对象读取账号密码，串联管理员查询、凭据验证、JWT 签发和摘要保存。</td><td>接收 <code>context.Context</code> 和 <code>*reqAdmin.LoginReq</code>；返回业务结果或错误，不接收 Gin 上下文。</td></tr>
+            <tr><td>Model</td><td>GORM 列映射、查询和条件更新，返回执行结果。</td><td>只接触数据库；不签发令牌，不使用 Gin。</td></tr>
+            <tr><td>Auth 工具</td><td>摘要、随机 jti、JWT 签发与密码学校验。</td><td>只处理传入的数据和可信配置，不直接访问数据库。</td></tr>
+            <tr><td>参数 / 响应层</td><td>描述外部 JSON，隔离数据库模型与业务实体。</td><td>请求密码仅在处理过程中短暂使用，响应没有密码或摘要字段。</td></tr>
+          </tbody>
+        </table></div>
+        <h3>按本次约定确定的业务入口</h3>
+        <pre><code>// biz：业务实体保留管理员身份，不长期保存原始密码。
+type Admin struct {
+    ID       int64
+    Username string
+}
+
+func (a *Admin) Login(
+    ctx context.Context,
+    req *reqAdmin.LoginReq,
+) (*AdminLoginResult, error)
+
+type AdminLoginResult struct {
+    ID          int64
+    Username    string
+    AccessToken string
+}</code></pre>
+        <p><code>reqAdmin</code> 是 <code>SolarNotesAdminAPI/param/req/v1/admin</code> 的导入别名。Controller 绑定成功后直接把完整的 <code>*LoginReq</code> 传给 Biz，不再把账号和密码拆成方法参数。Biz 从 <code>req.Admin</code> 读取账号密码，对 nil 请求或 nil 管理员对象做防御检查；原始密码只在本次调用中使用。业务结果包含管理员身份与访问令牌，由 Controller 转成已有响应 DTO。</p>
+        <div class="code-label">Controller 调用关系示意 · 非完整实现</div>
+        <pre><code>req := &amp;reqAdmin.LoginReq{}
+// c.ShouldBindJSON(req) 成功后：
+adminBiz := &amp;biz.Admin{}
+result, err := adminBiz.Login(c.Request.Context(), req)
+// 根据错误映射业务码；成功时转换为响应 DTO。
+// req 包与 controller 包都叫 admin 时，使用 reqAdmin / respAdmin 导入别名。</code></pre>
+      </section>
+
+      <section id="flow" aria-labelledby="flow-title">
+        <div class="section-label">04 / LOGIN FLOW</div>
+        <h2 id="flow-title">一次成功登录的处理顺序</h2>
+        <figure>
+          <div class="diagram" role="region" aria-label="管理员登录实现时序图，窄屏可横向滚动" tabindex="0">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 650" role="img" aria-labelledby="flow-svg-title flow-svg-desc">
+              <title id="flow-svg-title">Controller、Biz、Model 与数据库的登录调用时序</title>
+              <desc id="flow-svg-desc">前端提交嵌套 admin 对象；Controller 绑定校验后把完整 LoginReq 传给 Biz；Biz 经 Model 按账号查询管理员，验证密码后生成随机 jti、签发 JWT 并计算其摘要，再由 Model 条件更新 token_hash；只有确认更新成功才经过 Controller 在 data.admin.access_token 中返回完整 JWT。</desc>
+              <defs><marker id="flow-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#24644c" stroke-width="1.5"/></marker><marker id="return-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#285e84" stroke-width="1.5"/></marker></defs>
+              <g font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="14" fill="#202e2a">
+                <rect x="35" y="15" width="150" height="45" rx="9" fill="#e9f1e8"/><text x="110" y="43" text-anchor="middle" font-weight="700">前端</text>
+                <rect x="305" y="15" width="170" height="45" rx="9" fill="#e9f1e8"/><text x="390" y="43" text-anchor="middle" font-weight="700">Controller</text>
+                <rect x="580" y="15" width="160" height="45" rx="9" fill="#e9f1e8"/><text x="660" y="43" text-anchor="middle" font-weight="700">Biz / Auth 工具</text>
+                <rect x="850" y="15" width="200" height="45" rx="9" fill="#e7f0f6"/><text x="950" y="43" text-anchor="middle" font-weight="700">Model / MySQL</text>
+                <g stroke="#c9d3c8" stroke-dasharray="5 5"><path d="M110 65 V610"/><path d="M390 65 V610"/><path d="M660 65 V610"/><path d="M950 65 V610"/></g>
+                <g stroke="#24644c" stroke-width="1.6" fill="none" marker-end="url(#flow-arrow)"><path d="M110 115 H385"/><path d="M390 175 H655"/><path d="M660 235 H945"/><path d="M660 425 H945"/></g>
+                <g stroke="#285e84" stroke-width="1.6" fill="none" stroke-dasharray="5 4" marker-end="url(#return-arrow)"><path d="M950 290 H665"/><path d="M950 480 H665"/><path d="M660 535 H395"/><path d="M390 590 H115"/></g>
+                <text x="250" y="98" text-anchor="middle">① POST /v1/admin/login</text>
+                <text x="522" y="158" text-anchor="middle">② Login(ctx, 完整请求对象)</text>
+                <text x="805" y="218" text-anchor="middle">③ 按 name 查询管理员</text>
+                <text x="805" y="273" text-anchor="middle">④ 返回主键与密码哈希</text>
+                <rect x="520" y="315" width="280" height="68" rx="9" fill="#fff4dc" stroke="#e6d7ad"/><text x="660" y="341" text-anchor="middle" fill="#79520d">⑤ 校验密码 → 随机 jti → 签发 JWT</text><text x="660" y="365" text-anchor="middle" font-size="13" fill="#79520d">计算完整 JWT 的 SHA-256 摘要</text>
+                <text x="805" y="408" text-anchor="middle">⑥ 条件更新 token_hash</text>
+                <text x="805" y="463" text-anchor="middle">⑦ 确认写入成功，影响 1 行</text>
+                <text x="522" y="518" text-anchor="middle">⑧ 返回业务结果</text>
+                <text x="250" y="573" text-anchor="middle">⑨ 返回 data.admin 与 JWT</text>
+                <text x="550" y="635" text-anchor="middle" font-size="12" fill="#5b6963">任何前置步骤失败，都不向前端返回可用令牌；数据库写入成功是登录成功的必要条件。</text>
+              </g>
+            </svg>
+          </div>
+          <figcaption>登录路由本身无需已有 JWT。已有令牌是否仍有效，由后续受保护接口的鉴权逻辑检查。</figcaption>
+        </figure>
+        <ol>
+          <li>Controller 执行请求绑定与校验，失败直接返回 10101。</li>
+          <li>Controller 将完整请求对象交给 Biz；Biz 从 <code>req.Admin.Username</code> 读取账号，再通过 Model 按 <code>name</code> 查询；不存在时返回统一凭据错误。</li>
+          <li>计算输入密码的 SHA-256，在 Go 中与数据库保存的摘要做恒定时间比较；不把原始密码带入 SQL。</li>
+          <li>读取可信配置，生成新的随机 <code>jti</code>，签发 JWT，计算这枚完整 JWT 的 SHA-256 摘要。</li>
+          <li>用主键和读取到的密码哈希作为条件保存新令牌摘要。数据库错误或条件未命中均不返回登录成功。</li>
+          <li>保存成功后返回业务结果；Controller 将 id、username、access_token 组装到 <code>data.admin</code>，调用既有 <code>Success(map[string]any)</code>，并设置 <code>Cache-Control: no-store</code>。</li>
+        </ol>
+      </section>
+
+      <section id="database" aria-labelledby="database-title">
+        <div class="section-label">05 / DATA ACCESS</div>
+        <h2 id="database-title">模型必须明确映射现有数据库列</h2>
+        <p>当前 <code>db.Connect</code> 已启用单数表名，<code>Admin</code> 会对应 <code>admin</code>；但 Go 字段名与列名仍需单独处理。GORM 默认会把 <code>Username</code> 映射成 <code>username</code>，现有表中并没有这列。<a class="ref" href="https://gorm.io/docs/conventions.html">GORM 命名约定 ↗</a></p>
+        <div class="code-label">model/admin.go · 建议映射</div>
+        <pre><code>type Admin struct {
+    ID           int64  `gorm:"column:id;primaryKey;autoIncrement:false"`
+    Username     string `gorm:"column:name"`
+    PasswordHash string `gorm:"column:password_hash"`
+    TokenHash    string `gorm:"column:token_hash"`
+}</code></pre>
+        <p>沿用已启用的单数表名映射，模型不新增 <code>TableName()</code> 方法。模型不会直接进行 JSON 序列化，因此只保留 GORM 标签，不添加 JSON 标签。把模型中的 <code>Password</code> 改成 <code>PasswordHash</code>，表明读出的不是原文；主键和用户名由 Controller 转换到响应 DTO。现有日期默认值与 ON UPDATE 继续由数据库维护。</p>
+        <h3>建议的 Model 方法</h3>
+        <pre><code>func FindAdminByName(
+    ctx context.Context, username string,
+) (*Admin, error)
+
+func UpdateAdminTokenHash(
+    ctx context.Context,
+    id int64,
+    expectedPasswordHash string,
+    newTokenHash string,
+) (updated bool, err error)</code></pre>
+        <p>所有 GORM 调用传递 <code>WithContext(ctx)</code>。查询采用 <code>Where("name = ?", username).Take(&amp;record)</code>，账号不存在时用 <code>errors.Is(err, gorm.ErrRecordNotFound)</code> 区分；其他数据库错误不能伪装成密码错误。<a class="ref" href="https://gorm.io/docs/query.html">GORM 单条查询 ↗</a></p>
+        <div class="code-label">查询示意 · 参数通过占位符绑定</div>
+        <pre><code>SELECT id, name, password_hash
+FROM admin
+WHERE name = ?
+LIMIT 1;</code></pre>
+        <h3>保存新摘要时，检查密码是否仍为刚才验证的版本</h3>
+        <p>查询账号与保存令牌之间，可能发生改密。为防止用刚失效的旧密码完成登录，建议采用一次条件更新：</p>
+        <pre><code>UPDATE admin
+SET token_hash = ?
+WHERE id = ?
+  AND CAST(password_hash AS BINARY) = CAST(? AS BINARY);
+
+参数顺序：新 JWT 的摘要、管理员 ID、先前查询到的密码哈希。</code></pre>
+        <p>最后一个条件只用于确认账号数据没有变化；密码是否正确已在 Go 中验证。二进制转换使这一条件按编码内容精确比较，不受该列不区分大小写的排序规则影响。若改密先提交，更新未命中；若登录先提交，后续改密再清空摘要，旧令牌仍会失效。</p>
+        <p>Model 检查执行错误及 <code>RowsAffected</code>，只有命中 1 行才返回成功。选择单列 <code>Update</code>，避免 <code>Save</code> 把旧模型的其他字段写回；需要写空字符串时同样显式更新单列，不能依赖会跳过零值的结构体更新。<a class="ref" href="https://gorm.io/docs/update.html">GORM 更新说明 ↗</a></p>
+        <div class="note"><p><strong>并发登录规则：</strong>每次登录生成不同的 JWT。两个登录同时成功时，以最后一次成功写入数据库的摘要为准；较早返回的令牌也可能随即失效。这是“每账号一枚当前有效令牌”的预期行为。前端应避免重复提交；“仅 PC 使用”不会自动消除并发或多浏览器登录。</p></div>
+        <p>正常登录只更新该管理员的 <code>token_hash</code>，数据库自动维护更新时间。没有匹配记录时不创建账号，也不插入替代记录。管理员表结构在这轮方案中无需增加 <code>token_version</code>、刷新会话表或过期时间列。</p>
+      </section>
+
+      <section id="tokens" aria-labelledby="tokens-title">
+        <div class="section-label">06 / HASHES AND JWT</div>
+        <h2 id="tokens-title">密码摘要与令牌摘要，输入和用途不同</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th scope="col">数据</th><th scope="col">生成方式</th><th scope="col">保存位置 / 用途</th></tr></thead>
+          <tbody>
+            <tr><td>密码摘要</td><td><code>hex(SHA256(原始密码的 UTF-8 字节))</code>，统一小写，64 个字符。</td><td><code>admin.password_hash</code>；登录时验证已有凭据。</td></tr>
+            <tr><td>访问 JWT</td><td>包含声明，使用服务端密钥按 HS256 签发。</td><td>完整值返回前端；后续随 Authorization 发送。</td></tr>
+            <tr><td>令牌摘要</td><td><code>hex(SHA256(完整 JWT 字符串))</code>，统一小写，64 个字符。</td><td><code>admin.token_hash</code>；判断该 JWT 是否为当前有效令牌。</td></tr>
+          </tbody>
+        </table></div>
+        <p>这是对现有数据库与已确认规则的兼容设计：本轮沿用已有 SHA-256 密码数据，不进行密码算法迁移。摘要使用标准库 <code>crypto/sha256</code> 和 <code>encoding/hex</code>；验证时解码数据库摘要、检查长度，再用 <code>crypto/subtle</code> 比较。数据库中的损坏编码按内部错误处理。</p>
+        <div class="note amber"><p><strong>不能混淆：</strong>JWT 的签名密钥属于服务端，既不是用户密码，也不是 <code>password_hash</code> 或 <code>token_hash</code>。知道密码摘要不能用于代替服务端密钥签发 JWT。两个数据库摘要都不返回给前端。</p></div>
+        <h3>JWT 声明建议</h3>
+        <pre><code>{
+  "sub": "2119659239906480128",
+  "iss": "SolarNotesAdminAPI",
+  "aud": ["SolarNotesAdminWeb"],
+  "iat": 1900000000,
+  "exp": 1900000900,
+  "jti": "&lt;每次登录重新生成的随机唯一标识&gt;"
+}</code></pre>
+        <ul>
+          <li><code>sub</code>：管理员已有主键的十进制字符串，使用 <code>strconv.FormatInt(id, 10)</code>，避免前端 Number 精度损失。</li>
+          <li><code>iss</code>、<code>aud</code>：服务端配置的固定签发方与使用对象，后续解析时必须匹配。</li>
+          <li><code>iat</code>、<code>exp</code>：由同一次服务端取时生成，时间单位为秒；暂定有效期 900 秒。</li>
+          <li><code>jti</code>：用 <code>crypto/rand</code> 生成 16 字节随机值后编码，每次登录生成新值；随机源失败则终止登录。不要依赖秒级时间戳来区分两次登录。</li>
+        </ul>
+        <p>用 <code>github.com/golang-jwt/jwt/v5</code> 的注册声明结构签发，不自行实现 JWT 格式或验签算法；下一轮实现时核对并锁定具体依赖版本。<a class="ref" href="https://pkg.go.dev/github.com/golang-jwt/jwt/v5">JWT v5 文档 ↗</a></p>
+        <h3>配置放在哪里</h3>
+        <p>建议新增 <code>conf/jwt.go</code>，并在 <code>conf.Config</code> 增加 JWT 配置。示例 YAML 只描述公开参数：</p>
+        <pre><code>jwt:
+  issuer: "SolarNotesAdminAPI"
+  audience: "SolarNotesAdminWeb"
+  expire_seconds: 900</code></pre>
+        <p>签名密钥建议从环境变量 <code>SOLAR_NOTES_JWT_SECRET</code> 读取，约定为随机密钥的 Base64 编码；启动时解码并要求至少 32 字节，禁止空值或静默使用示例密钥。HS256 的密钥长度要求见 <a href="https://www.rfc-editor.org/rfc/rfc7518.html#section-3.2">RFC 7518 §3.2</a>。编码只是便于配置，不增加密钥熵。</p>
+        <p>现有 YAML 加载启用了 <code>KnownFields(true)</code>，因此增加 YAML 键时必须同步增加结构体字段，并在 <code>Config.validate()</code> 中校验签发方、受众、正数有效期及密钥。配置不合法时应在启动阶段失败，而非等到第一次登录。</p>
+      </section>
+
+      <section id="lifecycle" aria-labelledby="lifecycle-title">
+        <div class="section-label">07 / AUTHENTICATION CONTRACT</div>
+        <h2 id="lifecycle-title">令牌摘要只有参与每次鉴权，才能使旧令牌失效</h2>
+        <p>下面是后续受保护接口必须接入的鉴权规则。登录接口负责签发和保存；鉴权中间件负责每次请求执行这些检查。只有登录接口、没有这一步，清空数据库摘要并不会自动阻止旧 JWT。</p>
+        <pre><code>Authorization: Bearer &lt;完整 JWT&gt;
+  → 检查格式与长度
+  → 只允许 HS256，并使用可信密钥验签
+  → 要求 exp，校验 exp / iss / aud，存在 nbf 时也校验
+  → 验证 sub 是合法、正数的管理员 int64 主键
+  → 查询该管理员当前 token_hash
+  → 空字符串：拒绝
+  → 与 SHA256(本次收到的完整 JWT) 不一致：拒绝
+  → 身份认证通过，将可信管理员身份交给业务处理器
+  → 业务处理器继续校验具体操作权限</code></pre>
+        <p>JWT 解析配置应明确使用 <code>WithValidMethods</code>、<code>WithIssuer</code>、<code>WithAudience</code> 与 <code>WithExpirationRequired</code>。仅解析载荷、仅读取过期时间或调用不校验签名的解析函数，都不能视为认证通过。<a class="ref" href="https://golang-jwt.github.io/jwt/usage/parse/">解析选项 ↗</a><a class="ref" href="https://pkg.go.dev/github.com/golang-jwt/jwt/v5#WithExpirationRequired">要求 exp ↗</a></p>
+        <h3 id="expiry-response">后端判断过期，前端按响应结果跳转</h3>
+        <p>前端只保存并发送令牌，不根据客户端时间判断 JWT 是否过期。后端在受保护接口鉴权时发现令牌过期，停止该业务请求并返回专门的业务错误。沿用 HTTP 200 + 业务码风格，建议预留以下错误码供后续鉴权接入使用：</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th scope="col">建议业务码</th><th scope="col">含义</th><th scope="col">前端处理</th></tr></thead>
+          <tbody>
+            <tr><td><code>20003</code></td><td>已确认令牌过期。</td><td>清理本地登录状态，跳转登录页。</td></tr>
+            <tr><td><code>20004</code></td><td>令牌缺失、签名或声明无效、账号不存在，或数据库摘要为空 / 不匹配。</td><td>清理本地登录状态，要求重新登录。</td></tr>
+          </tbody>
+        </table></div>
+        <div class="code-label">令牌过期响应示例 · 后续受保护接口</div>
+        <pre><code>{
+  "code": 20003,
+  "message": "登录已过期，请重新登录",
+  "data": {}
+}</code></pre>
+        <p>具体错误码是本文的建议编号，仍可调整；“过期由后端判断、前端收到对应响应后跳转”是已确认的行为。JWT 无效与 JWT 过期应区分，存在签名等其他校验错误时不应把它归类为单纯过期；数据库故障也不能伪装成登录过期。</p>
+        <p>没有发起请求时，前端不主动计时退出；下一次受保护请求得到上述响应后再跳转。后端不会因页面尚未跳转而放行过期令牌，也不会把过期请求继续交给业务处理器。</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th scope="col">事件</th><th scope="col">数据库操作</th><th scope="col">后续请求的结果</th></tr></thead>
+          <tbody>
+            <tr><td>首次成功登录</td><td>保存 JWT A 的摘要。</td><td>A 在有效期内且校验通过时可用。</td></tr>
+            <tr><td>再次成功登录</td><td>用 JWT B 的摘要覆盖 A。</td><td>A 不再匹配；B 成为当前令牌。</td></tr>
+            <tr><td>退出登录</td><td>清空该管理员的令牌摘要。</td><td>所有旧 JWT 在下一次鉴权时被拒绝。</td></tr>
+            <tr><td>修改密码</td><td>在同一事务中更新密码哈希并清空摘要。</td><td>所有旧 JWT 在下一次鉴权时被拒绝；旧密码不能重新完成登录。</td></tr>
+            <tr><td>自然过期</td><td>不依赖数据库定时清理。</td><td>即使摘要仍匹配，exp 检查也拒绝访问。</td></tr>
+          </tbody>
+        </table></div>
+        <p>这里的“失效”指状态变更提交后，后续鉴权不再通过；已经完成鉴权并正在执行的请求不会被自动撤回。后续实现退出时，也要处理旧请求与新登录并发的顺序，避免延迟执行的旧请求覆盖新的会话状态。</p>
+        <p>当前方案每次访问读数据库中的摘要，先保持这个直接、可验证的行为；若以后加缓存，退出与改密必须同步使缓存失效。访问 JWT 不需要额外的 <code>expire_time</code> 列，也不需要新增版本号。</p>
+        <h3>前端与跨域的衔接</h3>
+        <p>前端在业务请求中主动添加 Bearer 头。当前 CORS 中间件已经先处理 OPTIONS，开发环境能回应 Authorization 预检；本草案不使用 Cookie 刷新机制，因此不要求为登录额外开启 Allow-Credentials。登录路由保留公开，不能先要求已有 JWT。</p>
+        <p class="small">令牌在前端如何持久保存属于前端实现约定。本文后面的示例只在内存持有，页面重载后会丢失；如果需要刷新页面仍保持登录，应在审阅时说明，再单独确定存储方式。</p>
+      </section>
+
+      <section id="responses" aria-labelledby="responses-title">
+        <div class="section-label">08 / RESPONSE MAPPING</div>
+        <h2 id="responses-title">沿用你已定义的响应 DTO 与包装器</h2>
+        <p><code>param/resp/v1/admin/login.go</code> 已存在，直接使用你定义的结构：</p>
+        <pre><code>type LoginResp struct {
+    Admin *LoginAdminResp `json:"admin"`
+}
+
+type LoginAdminResp struct {
+    ID          string `json:"id"`
+    Username    string `json:"username"`
+    AccessToken string `json:"access_token"`
+}</code></pre>
+        <p>Biz 接收完整的请求 DTO，返回包含 <code>ID / Username / AccessToken</code> 的业务结果。Controller 转成上述响应 DTO，并用 <code>strconv.FormatInt</code> 把主键转为字符串。令牌位于 <code>LoginAdminResp</code> 内，不在 <code>data</code> 根对象增加基础类型字段。</p>
+        <h3>沿用现有统一包装器</h3>
+        <p><code>RespBody.Data</code> 与 <code>Success()</code> 继续使用你已设置的 <code>map[string]any</code>。约定 map 中每个直接子项的值都为对象；基础类型字段放到各自业务对象内部：</p>
+        <pre><code>type RespBody struct {
+    Code    int            `json:"code"`
+    Message string         `json:"message"`
+    Data    map[string]any `json:"data"`
+}
+
+func (r *RespBody) Success(data map[string]any) {
+    r.Code = SuccessCode
+    r.Message = "success"
+    r.Data = data
+}
+
+// ValidateError(...)：code=10101，返回适当的参数提示。
+// LoginCredentialError()：code=20001，统一凭据错误。
+// LoginStateChanged()：code=20002，提示重新登录。
+// DBError(...)：code=10201，对外只返回统一数据库错误提示。
+// InternalError(...)：code=500，对外只返回统一内部错误提示。
+// 后续鉴权增加过期、无效令牌的业务错误响应。
+// 所有失败分支的 Data 都明确设置为空对象 {}。</code></pre>
+        <div class="code-label">Controller 成功分支示意 · 已处理 Biz 返回的错误后</div>
+        <pre><code>loginResp := &amp;respAdmin.LoginResp{
+    Admin: &amp;respAdmin.LoginAdminResp{
+        ID:          strconv.FormatInt(result.ID, 10),
+        Username:    result.Username,
+        AccessToken: result.AccessToken,
+    },
+}
+
+respBody.Success(map[string]any{
+    "admin": loginResp.Admin,
+})
+c.Header("Cache-Control", "no-store")
+c.JSON(http.StatusOK, respBody)</code></pre>
+        <p>map 本身对应 <code>data</code>，其中的 <code>"admin"</code> 对应 <code>loginResp.Admin</code>，因此序列化结果正好是 <code>data.admin.id / username / access_token</code>。使用非 nil 的管理员响应指针，保证成功结果中的 <code>admin</code> 是对象。每个 data 子项均为对象的约定，通过 Controller 的构造方式和序列化验收保持。</p>
+        <p>既有 JSON 包装保持 <code>code/message/data</code>。实际数据库异常保留在服务端日志中；不把 SQL、连接信息或堆栈通过现有 <code>err.Error()</code> 直接传给前端。</p>
+        <p>Controller 移除现有密码打印；数据库层建议把 GORM 日志的 <code>ParameterizedQueries</code> 设为 true，使错误和慢 SQL 日志也不展开密码摘要、令牌摘要等绑定参数。<a class="ref" href="https://gorm.io/docs/logger.html">GORM 日志参数 ↗</a></p>
+        <h3>前端如何判断登录成功</h3>
+        <pre><code>let accessToken = null;
+
+async function login(username, password) {
+  const response = await fetch("/v1/admin/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ admin: { username, password } })
+  });
+
+  if (!response.ok) throw new Error("登录服务请求失败");
+  const body = await response.json();
+  if (body.code !== 200) throw new Error(body.message);
+
+  accessToken = body.data.admin.access_token;
+  return body.data.admin;
+}
+
+async function requestProtected(path, options = {}) {
+  const headers = new Headers(options.headers);
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+
+  const response = await fetch(path, { ...options, headers });
+  if (!response.ok) throw new Error("接口请求失败");
+  const body = await response.json();
+
+  // 与后端对齐后的鉴权业务码；不在前端解码 JWT 或判断时间。
+  if (body.code === 20003 || body.code === 20004) {
+    accessToken = null;
+    // 实际前端若还保存了管理员信息或持久化令牌，也在此一并清理。
+    window.location.replace("/login");
+    throw new Error(body.message);
+  }
+  if (body.code !== 200) throw new Error(body.message);
+  return body.data;
+}</code></pre>
+        <p>此处请求路径适用于同源部署或前端代理已转发到 API 的情况；前后端分离时使用配置中的 API 基地址。<code>/login</code> 是前端登录路由示例，实现时按前端实际路由调整。由于接口使用 HTTP 200 包装，<strong>仅检查 <code>response.ok</code> 无法判断业务是否成功</strong>，必须再检查业务码。网络和数据库故障单独提示，不统一当作过期处理。</p>
+      </section>
+
+      <section id="files" aria-labelledby="files-title">
+        <div class="section-label">09 / CHANGE MAP</div>
+        <h2 id="files-title">下一轮预计修改哪些文件</h2>
+        <p>保留你现在的 Controller / Biz / Model 分层，不额外引入 Service、Repository、DAO 等重复层。工具包集中处理 JWT 与摘要，职责保持独立。</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th scope="col">文件</th><th scope="col">计划</th></tr></thead>
+          <tbody>
+            <tr><td><code>controller/v1/admin/admin.go</code></td><td>接入 Biz，删除凭据打印，映射错误与 DTO，返回 no-store 响应。</td></tr>
+            <tr><td><code>biz/admin.go</code></td><td>实现 Admin.Login(ctx, req)，接收完整请求对象；补充业务结果与业务错误。</td></tr>
+            <tr><td><code>model/admin.go</code></td><td>补充 GORM 列标签、查询方法、带预期密码哈希的条件更新；沿用默认表名映射，模型不添加 JSON 标签。</td></tr>
+            <tr><td><code>db/connect.go</code></td><td>配置 GORM 参数化 SQL 日志，保留诊断信息并避免输出绑定的凭据摘要。</td></tr>
+            <tr><td><code>param/req/v1/admin/login.go</code></td><td>保留嵌套 admin 请求及当前长度要求；补充必要的空白账号校验。</td></tr>
+            <tr><td><code>param/resp/v1/admin/login.go</code>，已存在</td><td>沿用 LoginResp 与 LoginAdminResp，后者包含 id、username、access_token。</td></tr>
+            <tr><td><code>resp_body/resp_body.go</code></td><td>沿用 Data 和 Success 的 map[string]any 类型与 success 消息；补充登录错误码，后续接入鉴权错误，统一错误消息。</td></tr>
+            <tr><td><code>auth/hash.go</code>，新增</td><td>SHA-256 编码、摘要格式校验与恒定时间比较。</td></tr>
+            <tr><td><code>auth/jwt.go</code>，新增</td><td>JWT 签发与基础验签工具、随机 jti、过期时间计算；不访问数据库。</td></tr>
+            <tr><td><code>conf/jwt.go</code>，新增</td><td>JWT 参数与密钥载入、启动校验。</td></tr>
+            <tr><td><code>conf/config.go</code>、各环境 YAML</td><td>接入公开 JWT 参数；实际密钥通过环境变量提供。</td></tr>
+            <tr><td><code>go.mod</code>、<code>go.sum</code></td><td>引入并锁定经过核对的 JWT v5 依赖版本。</td></tr>
+          </tbody>
+        </table></div>
+        <p><code>main.go</code> 的登录路由可以沿用。若工具采用启动时初始化，只增加必要的初始化调用；不顺带重构路由。<code>middleware/auth.go</code> 的数据库摘要核验及受保护路由接入列为后续工作，按第 07 节约束实现。</p>
+      </section>
+
+      <section id="verification" aria-labelledby="verification-title">
+        <div class="section-label">10 / ACCEPTANCE</div>
+        <h2 id="verification-title">后续实现如何证明行为正确</h2>
+        <p>以下是业务代码实现后的验收计划，不表示当前已运行这些接口测试。优先检查会改变鉴权结果的分支，以及失败时是否错误地返回令牌。</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th scope="col">场景</th><th scope="col">预期结果</th><th scope="col">阶段</th></tr></thead>
+          <tbody>
+            <tr><td>合法账号与正确密码</td><td>业务码 200、message 为 success；data 只含 admin 对象，其字段为 id、username、access_token；JWT 可验签，sub 对应已有 ID，数据库摘要匹配该 JWT。</td><td>登录实现</td></tr>
+            <tr><td>完整请求对象进入业务层</td><td>Controller 将同一个 *LoginReq 传给 Biz；Biz 正确读取 req.Admin，nil 请求或 nil 管理员对象不导致 panic。</td><td>登录实现</td></tr>
+            <tr><td>缺少 admin、admin 为 null、非法 JSON、长度越界、纯空白账号</td><td>10101；不访问登录业务或签发令牌。</td><td>登录实现</td></tr>
+            <tr><td>账号不存在 / 密码错误</td><td>统一 20001；无 access_token；不清空已有有效令牌。</td><td>登录实现</td></tr>
+            <tr><td>以 Admin 登录只存在 admin 的记录</td><td>按当前区分大小写的账号规则，不匹配该记录。</td><td>登录实现</td></tr>
+            <tr><td>相同账号在同一秒内连续登录两次</td><td>两枚 JWT 的 jti 不同、完整值不同；数据库保存最后一次成功写入的摘要。</td><td>登录实现</td></tr>
+            <tr><td>密码验证后、保存令牌前发生改密</td><td>条件更新未命中，返回 20002；不得凭旧密码重新建立当前令牌。</td><td>登录实现</td></tr>
+            <tr><td>数据库查询或更新错误</td><td>10201，无令牌、无内部 SQL 错误泄露；检查失败处理。</td><td>登录实现</td></tr>
+            <tr><td>密钥未配置、Base64 非法、密钥过短、有效期非法</td><td>启动校验失败，不静默使用默认密钥。</td><td>配置实现</td></tr>
+            <tr><td>随机源失败、JWT 签发失败、数据库密码摘要损坏</td><td>统一内部错误，不返回令牌；日志不包含密码或凭据摘要。</td><td>登录实现</td></tr>
+            <tr><td>JWT 过期、篡改、算法错误、iss / aud 不匹配、缺少 exp</td><td>JWT 工具拒绝验证并区分过期与其他错误；未接入中间件前也应覆盖工具的验证行为。</td><td>JWT 工具</td></tr>
+            <tr><td>后端判断令牌过期</td><td>受保护接口返回专门的过期响应；前端不解析有效期，收到响应后清理状态并跳转登录页。</td><td>后续鉴权接入</td></tr>
+            <tr><td>签名正确，但数据库摘要为空或不匹配</td><td>受保护接口返回无效 / 已撤销令牌响应；前端清理登录状态。</td><td>后续鉴权接入</td></tr>
+            <tr><td>数据库或网络故障</td><td>提示对应故障，不当成令牌过期而强制跳转。</td><td>后续前端接入</td></tr>
+            <tr><td>退出或改密提交后重放旧 JWT</td><td>下一次鉴权失败；改密时密码更新与清空令牌同时提交。</td><td>后续会话操作</td></tr>
+          </tbody>
+        </table></div>
+        <p>实现阶段应运行相关 Go 测试与 <code>go test ./...</code>，数据库集成场景使用独立测试数据或可回滚事务。真实调用开发管理员登录接口会更新其 <code>token_hash</code>，并使先前的令牌失效；这应当作为联调的预期结果。</p>
+        <div class="note"><p><strong>响应丢失的处理：</strong>数据库已经保存摘要，但网络在响应到达前中断时，客户端未必能收到令牌。这不应通过提前返回成功来规避；客户端可重新登录，以新令牌覆盖前次状态。涉及写入结果不确定的数据库网络故障，也不应盲目把已生成 JWT 当作登录成功结果返回。</p></div>
+      </section>
+
+      <section id="review" aria-labelledby="review-title">
+        <div class="section-label">11 / REVIEW POINTS</div>
+        <h2 id="review-title">已确认约定与仍可调整的建议</h2>
+        <p>账号列、现有密码摘要格式、每账号一枚当前令牌及退出 / 改密后的失效目标，继续沿用前面的讨论。本次修订已落实以下要求：</p>
+        <ol class="review-list">
+          <li><strong>成功响应：</strong><code>code=200</code>、<code>message="success"</code>；<code>data.admin</code> 内仅包含字符串 id、username、access_token。固定使用 Bearer，不额外返回令牌类型或到期时间。</li>
+          <li><strong>有效期判断：</strong>JWT 内部保留 exp，完全由后端鉴权检查；前端收到专门的过期错误后清理状态并跳转登录页，不做客户端过期判断。</li>
+          <li><strong>业务入口：</strong><code>biz.Admin.Login(ctx, req *reqAdmin.LoginReq)</code> 直接接收完整请求体对象。</li>
+          <li><strong>模型：</strong>使用当前单数表名策略，省略 TableName 方法；仅保留必要 GORM 标签，模型不添加 JSON 标签。</li>
+          <li><strong>响应 DTO 与包装器：</strong>沿用已存在的 LoginResp / LoginAdminResp；Data 与 Success 均保留 <code>map[string]any</code>，其直接子项为对象。</li>
+        </ol>
+        <h3>仍作为建议保留的实现选择</h3>
+        <ul>
+          <li>HS256、后端有效期暂定 15 分钟；密钥由环境变量提供，YAML 管理公开参数。</li>
+          <li>后续鉴权的过期码暂定 20003，无效 / 已撤销令牌码暂定 20004；行为确定，具体编号可调整。</li>
+          <li>下一轮先完成登录与 JWT 工具，后续接入鉴权中间件及退出、改密接口；若要同时实现，可在确定范围时调整。</li>
+          <li>前端是否在刷新页面后保持登录仍待明确；本文示例使用内存，未引入刷新令牌、Cookie 或自动续期。</li>
+        </ul>
+        <p>审阅时可继续引用章节编号调整建议值或实现范围。本轮更新的是文档；已经定义好的请求、响应和包装器按本次约定作为后续实现依据。</p>
+      </section>
+
+      <section id="references" aria-labelledby="references-title">
+        <div class="section-label">12 / REFERENCES</div>
+        <h2 id="references-title">依据与参考资料</h2>
+        <p class="small">当前代码依据：main.go、controller/v1/admin/admin.go、biz/admin.go、model/admin.go、param/req/v1/admin/login.go、param/resp/v1/admin/login.go、resp_body/resp_body.go、db/connect.go、conf/config.go。本次已按审阅意见重新核对请求、响应 DTO、包装器和模型；读取日期：2026-11-09。数据库字段依据此前对 solar_notes.admin 的实际核验与管理员记录插入结果。</p>
+        <ol>
+          <li><a href="jwt-auth-flow.html">本项目：JWT 鉴权前后端通信说明</a>，用于回顾 JWT 的基本通信过程；本项目登录接口的具体字段以本方案为准。</li>
+          <li><a href="https://github.com/gin-gonic/website/blob/master/src/content/docs/en/docs/binding/binding-and-validation.md">Gin 官方：Model binding and validation</a>，请求绑定与 ShouldBind 的错误处理。</li>
+          <li><a href="https://gorm.io/docs/conventions.html">GORM：Conventions</a>，表名、列名与自定义映射。</li>
+          <li><a href="https://gorm.io/docs/query.html">GORM：Query</a>，单条记录查询与 ErrRecordNotFound。</li>
+          <li><a href="https://gorm.io/docs/update.html">GORM：Update</a>，条件更新、RowsAffected 与零值行为。</li>
+          <li><a href="https://gorm.io/docs/logger.html">GORM：Logger</a>，使用 ParameterizedQueries 避免在 SQL 日志展开参数。</li>
+          <li><a href="https://pkg.go.dev/github.com/golang-jwt/jwt/v5">golang-jwt/jwt v5 API</a>，注册声明与显式要求 exp。</li>
+          <li><a href="https://golang-jwt.github.io/jwt/usage/parse/">golang-jwt：Parsing and Validating a JWT</a>，算法、签发方与受众约束。</li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc7519.html">RFC 7519</a>，sub、iss、aud、iat、exp、jti 的含义。</li>
+          <li><a href="https://www.rfc-editor.org/rfc/rfc7518.html#section-3.2">RFC 7518 §3.2</a>，HS256 与 HMAC 密钥要求。</li>
+        </ol>
+      </section>
+      <footer>SolarNotesAdminAPI · 管理员登录功能实现方案 · 2026-11-09 · 单文件 HTML，无外部脚本、字体或图片依赖。</footer>
+    </main>
+  </div>
+  <script>
+    "use strict";
+    (() => {
+      const cases = {
+        success: {
+          note: "验证、JWT 签发和令牌摘要保存全部成功，才返回这个结果。",
+          body: {
+            code: 200,
+            message: "success",
+            data: {
+              admin: { id: "2119659239906480128", username: "admin", access_token: "<完整 JWT 字符串>" }
+            }
+          }
+        },
+        invalid: { note: "请求结构、必填或长度等校验失败；不进入登录业务。", body: { code: 10101, message: "请求参数不合法", data: {} } },
+        credentials: { note: "账号不存在与密码错误采用相同结果，不改变已有令牌摘要。", body: { code: 20001, message: "账号或密码错误", data: {} } },
+        changed: { note: "读取凭据后账号发生变化，保存令牌的条件更新未命中；不返回 JWT。", body: { code: 20002, message: "账号状态已变化，请重新登录", data: {} } },
+        database: { note: "查询或保存失败，不返回 JWT；数据库内部错误只在服务端适当记录。", body: { code: 10201, message: "数据库操作失败，请稍后重试", data: {} } },
+        internal: { note: "随机值生成、签发或内部数据处理失败；不会把生成失败或未保存的令牌返回。", body: { code: 500, message: "服务暂时不可用，请稍后重试", data: {} } },
+        expired: { note: "后续受保护接口由后端判断已过期；前端收到该响应后清理登录状态并跳转登录页。20003 为建议业务码。", body: { code: 20003, message: "登录已过期，请重新登录", data: {} } },
+        "token-invalid": { note: "后续鉴权发现令牌缺失、无效或已撤销；要求重新登录。20004 为建议业务码。", body: { code: 20004, message: "登录状态无效，请重新登录", data: {} } }
+      };
+      const select = document.getElementById("response-case");
+      const note = document.getElementById("response-note");
+      const output = document.getElementById("response-json");
+      const render = () => {
+        const current = cases[select.value];
+        note.textContent = current.note;
+        output.textContent = JSON.stringify(current.body, null, 2);
+      };
+      select.addEventListener("change", render);
+      render();
+      document.getElementById("response-preview").hidden = false;
+    })();
+  </script>
+</body>
+</html>

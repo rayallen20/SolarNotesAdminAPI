@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="SolarNotesAdminAPI 全局请求体大小配置、Gin 中间件顺序和验证方案。">
+<title>全局请求体大小 · 配置实现方案 · Solar Notes</title>
+<style>
+:root{color-scheme:light;--paper:#f3f6f2;--ink:#1d302a;--muted:#5e7068;--line:#dce5dc;--green:#21644c;--soft:#e7f1e8;--amber:#846013;--warm:#fbf2db;--blue:#275e7a;--mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:24px}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.82 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+a{color:var(--green);text-underline-offset:4px;overflow-wrap:anywhere}a:hover{color:#103d2b}:focus-visible{outline:3px solid #4485ae;outline-offset:3px}[hidden]{display:none!important}
+.skip{position:absolute;top:-80px;left:20px;background:white;padding:10px 16px;z-index:4}.skip:focus{top:12px}
+.page{width:min(1350px,100%);margin:auto;display:grid;grid-template-columns:228px minmax(0,1fr);gap:54px;padding:40px 38px 80px}.sidebar{position:sticky;top:28px;align-self:start;max-height:calc(100vh - 56px);overflow:auto}
+.brand{font-size:12px;font-weight:800;letter-spacing:.1em;color:var(--green)}.brand::before{content:"";display:inline-block;width:12px;height:12px;border:3px solid var(--green);border-radius:50%;margin-right:8px;vertical-align:-1px}.sidebar p{font-size:13px;color:var(--muted);line-height:1.7}.sidebar nav{display:grid;gap:3px;margin-top:22px}.sidebar nav a{display:flex;gap:12px;padding:7px 9px;border-radius:7px;text-decoration:none;color:var(--muted);font-size:14px}.sidebar nav a:hover{background:var(--soft);color:var(--green)}.sidebar nav span{color:var(--green);font:12px/2 var(--mono)}.side-note{border-top:1px solid var(--line);padding-top:16px;margin-top:22px}
+main{min-width:0}.eyebrow,.section-label{color:var(--green);font:700 12px/1.5 var(--mono);letter-spacing:.1em}.hero h1{font-size:clamp(33px,4vw,48px);line-height:1.25;letter-spacing:-.03em;margin:16px 0}.lede{font-size:18px;color:var(--muted);max-width:820px}.tags{display:flex;flex-wrap:wrap;gap:8px;margin:24px 0}.tag{border:1px solid var(--line);border-radius:30px;padding:4px 11px;font-size:12px;background:white;color:var(--muted)}
+.thesis{background:#194b39;color:#fff;border-radius:14px;padding:22px 25px}.thesis p{margin:0}.thesis strong{color:#d4f5dc}.page-tools{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:20px 0}.page-tools button,.code-toolbar button{font:inherit;font-size:13px;border:1px solid var(--green);border-radius:7px;background:white;color:var(--green);cursor:pointer;padding:6px 12px}.page-tools button:hover,.code-toolbar button:hover{background:var(--soft)}
+section{padding-top:42px;margin-top:10px}h2{font-size:27px;line-height:1.4;letter-spacing:-.02em;margin:8px 0 20px}h3{font-size:19px;line-height:1.55;margin:27px 0 10px}p{margin:12px 0}code{font:.87em/1.7 var(--mono);background:#e8f0e8;border-radius:4px;padding:2px 5px;overflow-wrap:anywhere}pre{margin:14px 0;padding:19px 22px;background:#1d3029;color:#e5efe6;border-radius:10px;overflow-x:auto;tab-size:2;font:13px/1.75 var(--mono)}pre code{font:inherit;background:transparent;color:inherit;padding:0;border-radius:0;overflow-wrap:normal}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:18px 0}.card{border:1px solid var(--line);background:#fffefa;border-radius:12px;padding:18px 19px}.card .n{color:var(--green);font:12px/1.5 var(--mono)}.card h3{margin:6px 0;font-size:16px}.card p{font-size:14px;color:var(--muted);margin:0}
+.note{background:var(--soft);border-left:3px solid var(--green);border-radius:0 8px 8px 0;padding:15px 18px;margin:20px 0;font-size:14px}.note.warning{background:var(--warm);border-color:var(--amber)}.note p{margin:0}.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:white;margin:18px 0}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;vertical-align:top;padding:12px 15px;border-bottom:1px solid var(--line);min-width:105px}th{color:var(--green);background:#edf3ec;font-weight:650}tr:last-child td{border-bottom:0}ul,ol{padding-left:23px}li{margin:8px 0}.small{font-size:13px;color:var(--muted)}
+details.code-file{border:1px solid var(--line);background:#fffefa;border-radius:10px;overflow:hidden;margin:18px 0}details.code-file summary{padding:14px 17px;cursor:pointer;font-weight:650;overflow-wrap:anywhere;line-height:1.7}.file-mode{display:inline-block;font-size:11px;padding:2px 7px;border-radius:5px;background:var(--soft);color:var(--green);margin-right:9px;font-weight:500}.file-path{font:13px/1.7 var(--mono)}.code-toolbar{display:flex;align-items:center;gap:10px;padding:9px 16px;border-top:1px solid var(--line)}.copy-feedback{font-size:12px;color:var(--muted)}.code-file pre{margin:0;border-radius:0;font-size:12.5px}footer{margin-top:45px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+@media(max-width:1050px){.page{gap:27px;padding-left:24px;padding-right:24px;grid-template-columns:185px minmax(0,1fr)}}@media(max-width:800px){.page{display:block;padding:24px 20px 55px}.sidebar{position:static;max-height:none;margin-bottom:32px}.sidebar nav{display:flex;gap:5px;overflow-x:auto;margin-top:15px;padding-bottom:8px}.sidebar nav a{white-space:nowrap;border:1px solid var(--line);padding:5px 9px}.sidebar p,.side-note{display:none}.grid{grid-template-columns:1fr}h2{font-size:24px}}
+@media(max-width:520px){pre{padding:16px;font-size:12px}th,td{padding:10px 12px}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}@media print{body{background:white;color:black;font-size:11pt}.page{display:block;width:100%;padding:0}.sidebar,.page-tools,.code-toolbar,.skip{display:none!important}.thesis{background:#eee;color:black}.thesis strong{color:black}section{padding-top:20px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f3f3;color:black;font-size:8pt}.code-file{overflow:visible!important}.table-wrap{overflow:visible}a{color:black}}
+
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:10px;margin:24px 0}.flow-step{flex:1 1 175px;border:1px solid var(--line);border-radius:10px;background:#fffefa;padding:13px 16px;font-size:14px}.flow-step strong{display:block;color:var(--green);font-size:15px}.flow-step span{color:var(--muted)}.flow-arrow{display:flex;align-items:center;color:var(--green);font-size:18px}.lead-code{font:13px/1.7 var(--mono);color:var(--green)}@media(max-width:800px){.flow-arrow{display:none}.flow-step{flex-basis:100%}}
+</style></head><body>
+<a class="skip" href="#content">跳到正文</a><div class="page">
+<aside class="sidebar" aria-label="文档导航"><div class="brand">SOLAR NOTES / DOCS</div>
+<p>为整个后端 API 配置统一的请求体大小限制。</p><nav aria-label="目录">
+<a href="#overview"><span>01</span>范围与响应</a><a href="#config"><span>02</span>配置与校验</a><a href="#ordering"><span>03</span>中间件顺序</a><a href="#limit"><span>04</span>请求体限制</a><a href="#main"><span>05</span>注册与启动</a><a href="#tests"><span>06</span>验证示例</a><a href="#limits"><span>07</span>适用边界</a>
+</nav><p class="side-note">独立 HTML · 可复制代码<br><a href="http-server-timeout-configuration.html">返回 HTTP 超时配置方案 ↗</a></p></aside>
+<main id="content"><header class="hero"><div class="eyebrow">HTTP API / REQUEST BODY LIMIT</div><h1>全局请求体大小<br>配置实现方案</h1>
+<p class="lede">把请求体上限写入配置，并在每个 API 处理器读取数据前统一检查；登录限流和跨域预检继续按既有约定工作。</p>
+<div class="tags"><span class="tag">所有 API 路由</span><span class="tag">单位：字节</span><span class="tag">含文件上传</span><span class="tag">仅文档 · 手动实施</span></div>
+<div class="thesis"><p><strong>上限属于整个后端，不是登录接口专用。</strong> 配置以字节为单位；超限后沿用 HTTP 200、业务码 10101 和对象形式的 data。</p></div>
+<div class="page-tools"><button type="button" id="expand-all" hidden>展开全部代码</button><button type="button" id="collapse-all" hidden>折叠全部代码</button><span class="small">每个代码块可单独展开和复制。</span></div><noscript><p class="small">未启用 JavaScript 时，仍可展开代码并手动复制。</p></noscript></header>
+
+<section id="overview" aria-labelledby="overview-title"><div class="section-label">01 / SCOPE</div><h2 id="overview-title">限制范围和返回格式</h2>
+<p>本方案对使用当前 Gin 引擎的 API 请求体统一执行上限，包括 JSON、表单、二进制、文件上传以及请求长度未知的情况。限制的是服务收到的<strong>请求体字节数</strong>，不包含请求头；multipart 请求的边界和表单字段也计入。</p>
+<div class="grid"><div class="card"><div class="n">CONFIG</div><h3>按环境配置</h3><p><code>service.max_request_body_bytes</code> 使用正整数，单位为字节。</p></div><div class="card"><div class="n">EXAMPLE</div><h3>1 MiB 示例</h3><p>1048576 字节仅作参考，实际值应结合 API 和上传需求设置。</p></div><div class="card"><div class="n">RESPONSE</div><h3>沿用现有协议</h3><p>超限返回 HTTP 200、业务码 10101 和空对象 data。</p></div></div>
+<details class="code-file"><summary><span class="file-mode">响应示例 · HTTP 200</span><span class="file-path">请求体超限</span></summary><div class="code-toolbar"><button type="button" data-copy="code-response" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="code-response" data-file="请求体超限">{
+  &quot;code&quot;: 10101,
+  &quot;message&quot;: &quot;请求体超过大小限制&quot;,
+  &quot;data&quot;: {}
+}
+</code></pre></details>
+<div class="note warning"><p><strong>这个上限也限制上传请求。</strong> 方案会在进入业务处理器前把请求体读取到内存：并发请求越多或配置越大，内存消耗越高，并且还存在切片扩容和业务处理开销。若需要大文件上传或流式处理，应先重新设计上传与限额策略，而不是简单地无限调大该值。</p></div></section>
+
+<section id="config" aria-labelledby="config-title"><div class="section-label">02 / CONFIG</div><h2 id="config-title">在服务配置中声明上限</h2>
+<p>给现有 <code>conf.Service</code> 增加 <code>MaxRequestBodyBytes</code>，并在已有的 <code>Service.validate()</code> 中要求该值大于 0。<code>Config.validate()</code> 已调用该方法，因此不需要修改配置加载链。</p>
+<details class="code-file" open><summary><span class="file-mode">替换完整文件</span><span class="file-path">conf/service.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-service" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="code-service" data-file="conf/service.go">package conf
+
+import (
+	&quot;errors&quot;
+	&quot;time&quot;
+)
+
+// Service 服务相关配置
+type Service struct {
+	Port                     string   `yaml:&quot;port&quot;`                        // Port 监听端口
+	TrustedProxies           []string `yaml:&quot;trusted_proxies&quot;`             // TrustedProxies 可信代理 IP 或 CIDR 列表,空列表表示不信任代理
+	ReadHeaderTimeoutSeconds int64    `yaml:&quot;read_header_timeout_seconds&quot;` // ReadHeaderTimeoutSeconds 读取请求头的最长时间.单位:秒
+	ReadTimeoutSeconds       int64    `yaml:&quot;read_timeout_seconds&quot;`        // ReadTimeoutSeconds 读取整个请求的最长时间.单位:秒
+	IdleTimeoutSeconds       int64    `yaml:&quot;idle_timeout_seconds&quot;`        // IdleTimeoutSeconds 等待下一个请求的最长空闲时间.单位:秒
+	MaxRequestBodyBytes      int64    `yaml:&quot;max_request_body_bytes&quot;`      // MaxRequestBodyBytes API 请求体大小上限，单位字节。
+}
+
+// maxServiceTimeoutSeconds 本常量用于表示转换为 time.Duration 时,不会溢出的最大秒数
+const maxServiceTimeoutSeconds int64 = (1&lt;&lt;63 - 1) / int64(time.Second)
+
+// validate 本方法校验 HTTP 服务超时及请求体大小配置
+func (s *Service) validate() error {
+	if s.ReadHeaderTimeoutSeconds &lt;= 0 || s.ReadHeaderTimeoutSeconds &gt; maxServiceTimeoutSeconds {
+		return errors.New(&quot;service.read_header_timeout_seconds 必须是有效的正秒数&quot;)
+	}
+	if s.ReadTimeoutSeconds &lt;= 0 || s.ReadTimeoutSeconds &gt; maxServiceTimeoutSeconds {
+		return errors.New(&quot;service.read_timeout_seconds 必须是有效的正秒数&quot;)
+	}
+	if s.IdleTimeoutSeconds &lt;= 0 || s.IdleTimeoutSeconds &gt; maxServiceTimeoutSeconds {
+		return errors.New(&quot;service.idle_timeout_seconds 必须是有效的正秒数&quot;)
+	}
+	if s.MaxRequestBodyBytes &lt;= 0 {
+		return errors.New(&quot;service.max_request_body_bytes 必须大于 0&quot;)
+	}
+	if s.ReadTimeoutSeconds &lt; s.ReadHeaderTimeoutSeconds {
+		return errors.New(&quot;service.read_timeout_seconds 不得小于 read_header_timeout_seconds&quot;)
+	}
+	return nil
+}
+
+// ReadHeaderTimeout 本方法用于返回读取请求头的最长时间
+func (s *Service) ReadHeaderTimeout() time.Duration {
+	return time.Duration(s.ReadHeaderTimeoutSeconds) * time.Second
+}
+
+// ReadTimeout 本方法用于返回读取整个请求的最长时间
+func (s *Service) ReadTimeout() time.Duration {
+	return time.Duration(s.ReadTimeoutSeconds) * time.Second
+}
+
+// IdleTimeout 本方法用于返回等待下一个请求的最长空闲时间
+func (s *Service) IdleTimeout() time.Duration {
+	return time.Duration(s.IdleTimeoutSeconds) * time.Second
+}
+</code></pre></details>
+<p>将以下配置项合并到 <code>config.example.yaml</code>、<code>config.dev.yaml</code> 和准备使用的 <code>config.prod.yaml</code> 的已有 <code>service</code> 段。三个环境可以设置不同的数值。</p>
+<div class="note warning"><p>下方只是片段：保留已有的端口、可信代理和 HTTP 超时字段，不要用它覆盖整个配置文件，也不要创建第二个同名 <code>service</code> 段。加载器启用了严格字段检查，应先增加结构体字段，再填写 YAML。</p></div>
+<details class="code-file" open><summary><span class="file-mode">合并到已有 service 段</span><span class="file-path">config.example.yaml / config.dev.yaml / config.prod.yaml</span></summary><div class="code-toolbar"><button type="button" data-copy="code-yaml" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="code-yaml" data-file="config.example.yaml / config.dev.yaml / config.prod.yaml">service:
+  # 保留已有的 port、trusted_proxies 和三个超时配置项
+
+  # 所有 API 请求体的大小上限，单位：字节；示例值为 1 MiB
+  max_request_body_bytes: 1048576
+</code></pre></details>
+<p>本方案没有隐式默认值：未填写、留空、零值或负数会导致配置加载失败。上限应按机器内存、并发规模和业务请求大小选择；该值不是字符数，也不是可上传文件本身的精确大小。</p></section>
+
+<section id="ordering" aria-labelledby="ordering-title"><div class="section-label">03 / ORDER</div><h2 id="ordering-title">保留跨域预检和登录限流</h2>
+<p>请求先设置跨域响应头；命中登录路由时，原有 IP 限流先记录请求；接着统一检查请求体；最后应答正常的 OPTIONS 预检或进入 API 处理器。</p>
+<div class="flow"><div class="flow-step"><strong>01 · 跨域响应头</strong><span>让超限等错误也带有现有跨域头。</span></div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-step"><strong>02 · 登录限流</strong><span>只对 POST 登录路由计数。</span></div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-step"><strong>03 · 全局上限</strong><span>校验请求体，然后处理预检或业务。</span></div></div>
+<h3>将现有 CORS 中间件拆成两个处理器</h3><p>原 <code>Cors()</code> 会提前结束 OPTIONS 请求。把“写跨域头”和“应答预检”分开后，预检请求也能经过请求体上限检查，超限响应仍然具有跨域响应头。这里保留当前开发环境的来源放行策略。</p>
+<details class="code-file"><summary><span class="file-mode">替换完整文件</span><span class="file-path">middleware/cors.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-cors" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="code-cors" data-file="middleware/cors.go">package middleware
+
+import (
+	&quot;net/http&quot;
+
+	&quot;github.com/gin-gonic/gin&quot;
+)
+
+// CorsHeaders 在处理请求前写入跨域响应头。
+func CorsHeaders(c *gin.Context) {
+	origin := c.GetHeader(&quot;Origin&quot;)
+	if origin != &quot;&quot; {
+		// 开发期不拒绝任何源，生产环境发版之前再收紧。
+		c.Header(&quot;Access-Control-Allow-Origin&quot;, origin)
+		c.Header(&quot;Vary&quot;, &quot;Origin&quot;)
+		c.Header(&quot;Access-Control-Allow-Methods&quot;, &quot;GET, POST, PUT, DELETE, OPTIONS&quot;)
+		c.Header(&quot;Access-Control-Allow-Headers&quot;, c.GetHeader(&quot;Access-Control-Request-Headers&quot;))
+		c.Header(&quot;Access-Control-Max-Age&quot;, &quot;600&quot;)
+	}
+	c.Next()
+}
+
+// CorsPreflight 在请求体大小校验通过后应答 OPTIONS 预检请求。
+func CorsPreflight(c *gin.Context) {
+	if c.Request.Method == http.MethodOptions {
+		c.AbortWithStatus(http.StatusNoContent)
+		return
+	}
+	c.Next()
+}
+</code></pre></details>
+<h3>仅对登录路由执行原有限流</h3><p>由于请求体限制需要注册为全局中间件，而登录限流必须先运行，新增一个只匹配登录路由的包装器。它继续使用现有 <code>LoginRateLimiter</code>；其他 API 和 OPTIONS 不使用登录额度。</p>
+<details class="code-file"><summary><span class="file-mode">新增完整文件</span><span class="file-path">middleware/login_route_limit.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-login-route" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="code-login-route" data-file="middleware/login_route_limit.go">package middleware
+
+import (
+	&quot;net/http&quot;
+
+	&quot;github.com/gin-gonic/gin&quot;
+)
+
+// LoginRouteLimit 仅对指定登录路由执行已有的 IP 限流。
+type LoginRouteLimit struct {
+	fullPath string            // fullPath 是登录路由的完整路径。
+	limiter  *LoginRateLimiter // limiter 是登录路由使用的限流器。
+}
+
+// NewLoginRouteLimit 为指定完整路由创建登录限流包装器。
+func NewLoginRouteLimit(fullPath string) *LoginRouteLimit {
+	return &amp;LoginRouteLimit{
+		fullPath: fullPath,
+		limiter:  NewLoginRateLimiter(),
+	}
+}
+
+// Handle 仅对匹配的 POST 登录请求调用原有的限流中间件。
+func (l *LoginRouteLimit) Handle(c *gin.Context) {
+	if c.Request.Method == http.MethodPost &amp;&amp; c.FullPath() == l.fullPath {
+		l.limiter.Handle(c)
+		return
+	}
+	c.Next()
+}
+</code></pre></details>
+<p>完整登录路径由 <code>main.go</code> 中的前缀与路径共同生成，路由注册和限流匹配使用同一组值，避免分别硬编码。<code>c.FullPath()</code> 使用 Gin 匹配到的路由路径；未匹配路由返回空字符串。</p>
+<div class="note"><p>登录请求即使因请求体超限被拒绝，也会先计入现有登录限流。达到原有限流阈值后，后续登录请求优先返回业务码 <code>20005</code>，不会继续读取请求体。</p></div></section>
+
+<section id="limit" aria-labelledby="limit-title"><div class="section-label">04 / BODY LIMIT</div><h2 id="limit-title">实现统一请求体检查</h2>
+<p>请求声明的长度已超过上限时直接拒绝；长度未知或声明值在范围内时，使用 <code>http.MaxBytesReader</code> 限制读取，再将通过检查的原始字节交回后续处理器。读取失败时返回统一文案，不暴露底层错误。</p>
+<details class="code-file" open><summary><span class="file-mode">新增完整文件</span><span class="file-path">middleware/request_body_limit.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-body-limit" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="code-body-limit" data-file="middleware/request_body_limit.go">package middleware
+
+import (
+	&quot;bytes&quot;
+	&quot;errors&quot;
+	&quot;io&quot;
+	&quot;net/http&quot;
+
+	&quot;SolarNotesAdminAPI/resp_body&quot;
+	&quot;github.com/gin-gonic/gin&quot;
+)
+
+// RequestBodyLimit 对进入后端 API 的请求体执行统一的字节数限制。
+type RequestBodyLimit struct {
+	maxBytes int64 // maxBytes 是每个请求体允许的最大字节数。
+}
+
+// NewRequestBodyLimit 创建请求体限制器；上限必须为正数。
+func NewRequestBodyLimit(maxBytes int64) (*RequestBodyLimit, error) {
+	if maxBytes &lt;= 0 {
+		return nil, errors.New(&quot;请求体大小上限必须大于 0&quot;)
+	}
+	return &amp;RequestBodyLimit{maxBytes: maxBytes}, nil
+}
+
+// Handle 在进入后续处理前读取受限请求体，并恢复供后续处理的请求体。
+func (l *RequestBodyLimit) Handle(c *gin.Context) {
+	// 已知长度超过上限时，不必读取请求体。
+	if c.Request.ContentLength &gt; l.maxBytes {
+		l.reject(c, &quot;请求体超过大小限制&quot;)
+		return
+	}
+
+	limitedBody := http.MaxBytesReader(c.Writer, c.Request.Body, l.maxBytes)
+	defer limitedBody.Close()
+
+	body, err := io.ReadAll(limitedBody)
+	if err != nil {
+		var sizeErr *http.MaxBytesError
+		if errors.As(err, &amp;sizeErr) {
+			l.reject(c, &quot;请求体超过大小限制&quot;)
+		} else {
+			l.reject(c, &quot;读取请求体失败&quot;)
+		}
+		return
+	}
+
+	// bytes.NewReader 复用读取结果；下游仍可正常读取原始字节。
+	c.Request.Body = io.NopCloser(bytes.NewReader(body))
+	c.Next()
+}
+
+// reject 以项目既有的参数错误格式终止请求。
+func (l *RequestBodyLimit) reject(c *gin.Context, message string) {
+	body := &amp;resp_body.RespBody{}
+	body.ValidateError(errors.New(message))
+	c.Header(&quot;Cache-Control&quot;, &quot;no-store&quot;)
+	c.AbortWithStatusJSON(http.StatusOK, body)
+}
+</code></pre></details>
+<p>在当前链路中，前置的跨域处理器和登录限流器不读取请求体。以后新增会读取请求体的中间件时，也应把它放在大小限制之后，否则数据可能在检查前已被读取。</p>
+<p>现有登录 Controller 可以继续使用 <code>ShouldBindJSON()</code>。全局中间件已读取并检查完整请求体，再恢复给 Controller；现有的 <code>MaxBytesError</code> 分支可以保留作为备用处理。</p></section>
+
+<section id="main" aria-labelledby="main-title"><div class="section-label">05 / REGISTRATION</div><h2 id="main-title">注册全局中间件</h2>
+<p>以下完整 <code>main.go</code> 基于当前工程，保留已配置的 HTTP 读取超时、可信代理及开发监听地址。<strong>不要再为登录路由额外注册原来的 <code>loginLimiter.Handle</code></strong>，否则会重复计数。</p>
+<details class="code-file"><summary><span class="file-mode">替换完整文件</span><span class="file-path">main.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-main" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="code-main" data-file="main.go">package main
+
+import (
+	&quot;SolarNotesAdminAPI/conf&quot;
+	&quot;SolarNotesAdminAPI/controller/v1/admin&quot;
+	&quot;SolarNotesAdminAPI/db&quot;
+	&quot;SolarNotesAdminAPI/middleware&quot;
+	&quot;SolarNotesAdminAPI/snowflake&quot;
+	&quot;SolarNotesAdminAPI/validation&quot;
+	&quot;errors&quot;
+	&quot;log&quot;
+	&quot;net/http&quot;
+
+	&quot;github.com/gin-gonic/gin&quot;
+)
+
+// main 加载配置与依赖，注册中间件和路由，并启动 HTTP 服务。
+func main() {
+	err := conf.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+	configInstance := conf.Get()
+
+	err = validation.Register()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = db.Connect(configInstance.Database)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = snowflake.InitSnowflake(configInstance.Snowflake.NodeID)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	router := gin.Default()
+	// Tips: 配置可信任代理 IP 或 CIDR 列表,以便在使用 X-Forwarded-For 等头部时正确获取客户端真实 IP 地址
+	// 否则获取到的客户端 IP 地址为前置代理的地址,从而导致登录接口访问频率限制失效
+	err = router.SetTrustedProxies(configInstance.Service.TrustedProxies)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// 为登录路由提供唯一的路径来源，避免限流匹配和注册路径不一致。
+	v1Prefix := &quot;/v1&quot;
+	loginPath := &quot;/admin/login&quot;
+	loginLimiter := middleware.NewLoginRouteLimit(v1Prefix + loginPath)
+
+	bodyLimit, err := middleware.NewRequestBodyLimit(configInstance.Service.MaxRequestBodyBytes)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 先设置跨域头和登录限流，再限制所有请求体，最后处理预检。
+	router.Use(middleware.CorsHeaders, loginLimiter.Handle, bodyLimit.Handle, middleware.CorsPreflight)
+
+	v1 := router.Group(v1Prefix)
+	{
+		v1.POST(loginPath, admin.Login)
+	}
+
+	server := &amp;http.Server{
+		// 开发环境沿用当前监听地址。
+		Addr: &quot;0.0.0.0:&quot; + configInstance.Service.Port,
+		// TODO: 使用同机 Nginx 部署时,将上一行改为:
+		// Addr: &quot;127.0.0.1:&quot; + configInstance.Service.Port,
+		Handler:           router,
+		ReadHeaderTimeout: configInstance.Service.ReadHeaderTimeout(), // 读取完整请求头的最长时间
+		ReadTimeout:       configInstance.Service.ReadTimeout(),       // 读取整个请求(包括请求头和请求体)的最长时间
+		IdleTimeout:       configInstance.Service.IdleTimeout(),       // 已完成请求的连接,在等待下一个请求时的最长空闲时间
+	}
+
+	err = server.ListenAndServe()
+	if err != nil &amp;&amp; !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
+	}
+}
+</code></pre></details>
+<div class="note"><p>原来的 <code>middleware.Cors()</code> 已由 <code>CorsHeaders</code> 和 <code>CorsPreflight</code> 代替。如果其他自定义代码或测试仍调用原方法，也需要按相同顺序更新。请求体上限器使用现有标准库和 Gin，不新增依赖。</p></div></section>
+
+<section id="tests" aria-labelledby="tests-title"><div class="section-label">06 / TESTS</div><h2 id="tests-title">使用合成请求验证</h2>
+<p>下面的测试不连接真实数据库，不读取开发密钥。它们覆盖配置校验、大小边界、未知长度、不同方法、上传、跨域预检、登录限流顺序、读取错误及并发。</p>
+<details class="code-file"><summary><span class="file-mode">可选测试文件</span><span class="file-path">conf/request_body_limit_test.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-config-test" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="code-config-test" data-file="conf/request_body_limit_test.go">package conf
+
+import (
+	&quot;strings&quot;
+	&quot;testing&quot;
+
+	&quot;go.yaml.in/yaml/v3&quot;
+)
+
+// TestRequestBodyLimitConfig 验证请求体上限必须为正数，且不影响现有超时校验。
+func TestRequestBodyLimitConfig(t *testing.T) {
+	values := []int64{-1, 0, 1, 1048576}
+	for _, value := range values {
+		service := &amp;Service{
+			ReadHeaderTimeoutSeconds: 5,
+			ReadTimeoutSeconds:       15,
+			IdleTimeoutSeconds:       60,
+			MaxRequestBodyBytes:      value,
+		}
+		err := service.validate()
+		if (err == nil) != (value &gt; 0) {
+			t.Errorf(&quot;上限 %d：校验结果 %v&quot;, value, err)
+		}
+	}
+}
+
+// TestRequestBodyLimitYAML 验证严格模式下的 YAML 字段绑定。
+func TestRequestBodyLimitYAML(t *testing.T) {
+	const input = `service:
+  read_header_timeout_seconds: 5
+  read_timeout_seconds: 15
+  idle_timeout_seconds: 60
+  max_request_body_bytes: 1048576
+`
+	var config Config
+	decoder := yaml.NewDecoder(strings.NewReader(input))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&amp;config); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Service.validate(); err != nil {
+		t.Fatal(err)
+	}
+	if config.Service.MaxRequestBodyBytes != 1048576 {
+		t.Fatal(&quot;请求体上限绑定错误&quot;)
+	}
+}
+</code></pre></details>
+<details class="code-file"><summary><span class="file-mode">可选测试文件</span><span class="file-path">middleware/request_body_limit_test.go</span></summary><div class="code-toolbar"><button type="button" data-copy="code-middleware-test" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="code-middleware-test" data-file="middleware/request_body_limit_test.go">package middleware
+
+import (
+	&quot;bytes&quot;
+	&quot;encoding/json&quot;
+	&quot;errors&quot;
+	&quot;io&quot;
+	&quot;mime/multipart&quot;
+	&quot;net/http&quot;
+	&quot;net/http/httptest&quot;
+	&quot;strings&quot;
+	&quot;sync&quot;
+	&quot;sync/atomic&quot;
+	&quot;testing&quot;
+	&quot;testing/iotest&quot;
+
+	&quot;SolarNotesAdminAPI/resp_body&quot;
+	&quot;github.com/gin-gonic/gin&quot;
+)
+
+// testEchoBody 返回接收到的原始请求体，供测试验证内容未改变。
+func testEchoBody(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+	c.Data(http.StatusOK, &quot;application/octet-stream&quot;, body)
+}
+
+// testMultipartBody 模拟读取上传文件的业务处理器。
+func testMultipartBody(c *gin.Context) {
+	file, _, err := c.Request.FormFile(&quot;file&quot;)
+	if err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+	body, err := io.ReadAll(file)
+	if err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+	c.Data(http.StatusOK, &quot;application/octet-stream&quot;, body)
+}
+
+// testIgnoreBody 模拟业务处理器不读取请求体。
+func testIgnoreBody(c *gin.Context) {
+	c.Status(http.StatusNoContent)
+}
+
+// testBodyLimitRouter 创建不依赖数据库的测试路由。
+func testBodyLimitRouter(t *testing.T, maxBytes int64) *gin.Engine {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	if err := router.SetTrustedProxies(nil); err != nil {
+		t.Fatal(err)
+	}
+	limit, err := NewRequestBodyLimit(maxBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loginLimit := NewLoginRouteLimit(&quot;/v1/admin/login&quot;)
+	router.Use(CorsHeaders, loginLimit.Handle, limit.Handle, CorsPreflight)
+	router.POST(&quot;/v1/echo&quot;, testEchoBody)
+	router.POST(&quot;/v1/upload&quot;, testMultipartBody)
+	router.PUT(&quot;/v1/ignore&quot;, testIgnoreBody)
+	router.POST(&quot;/v1/admin/login&quot;, testIgnoreBody)
+	return router
+}
+
+// testBodyLimitRequest 发送测试请求，unknown 为 true 时模拟未知请求体长度。
+func testBodyLimitRequest(router *gin.Engine, method, path, value string, unknown bool) *httptest.ResponseRecorder {
+	var reader io.Reader = strings.NewReader(value)
+	if unknown {
+		reader = io.NopCloser(strings.NewReader(value))
+	}
+	req := httptest.NewRequest(method, path, reader)
+	req.RemoteAddr = &quot;198.51.100.10:4321&quot;
+	req.Header.Set(&quot;Origin&quot;, &quot;https://frontend.example&quot;)
+	out := httptest.NewRecorder()
+	router.ServeHTTP(out, req)
+	return out
+}
+
+// testErrorCode 读取项目统一响应中的业务码。
+func testErrorCode(t *testing.T, out *httptest.ResponseRecorder) int {
+	t.Helper()
+	var body resp_body.RespBody
+	if err := json.Unmarshal(out.Body.Bytes(), &amp;body); err != nil {
+		t.Fatal(err)
+	}
+	if out.Code != http.StatusOK || body.Data == nil {
+		t.Fatal(&quot;响应状态或 data 对象不符合约定&quot;)
+	}
+	return body.Code
+}
+
+// TestGlobalBodyLimitBoundaries 验证全局上限、边界及请求体转发。
+func TestGlobalBodyLimitBoundaries(t *testing.T) {
+	router := testBodyLimitRouter(t, 16)
+	for _, unknown := range []bool{false, true} {
+		out := testBodyLimitRequest(router, http.MethodPost, &quot;/v1/echo&quot;, strings.Repeat(&quot;x&quot;, 16), unknown)
+		if out.Code != http.StatusOK || out.Body.String() != strings.Repeat(&quot;x&quot;, 16) {
+			t.Fatal(&quot;上限内的请求体应原样交给处理器&quot;)
+		}
+		out = testBodyLimitRequest(router, http.MethodPost, &quot;/v1/echo&quot;, strings.Repeat(&quot;x&quot;, 17), unknown)
+		if testErrorCode(t, out) != resp_body.ValidateErrorCode {
+			t.Fatal(&quot;超过上限的请求应返回参数错误&quot;)
+		}
+		if out.Header().Get(&quot;Access-Control-Allow-Origin&quot;) != &quot;https://frontend.example&quot; {
+			t.Fatal(&quot;跨域错误响应缺少允许来源的响应头&quot;)
+		}
+	}
+}
+
+// TestGlobalBodyLimitReadsUnknownBody 验证未知长度及处理器不读取请求体时仍会限制。
+func TestGlobalBodyLimitReadsUnknownBody(t *testing.T) {
+	router := testBodyLimitRouter(t, 16)
+	out := testBodyLimitRequest(router, http.MethodPut, &quot;/v1/ignore&quot;, &quot;{}&quot;+strings.Repeat(&quot; &quot;, 20), true)
+	if testErrorCode(t, out) != resp_body.ValidateErrorCode {
+		t.Fatal(&quot;未知长度的超大请求不应进入业务处理器&quot;)
+	}
+}
+
+// TestGlobalBodyLimitPreflight 验证预检仍可处理且超大预检请求也受限制。
+func TestGlobalBodyLimitPreflight(t *testing.T) {
+	router := testBodyLimitRouter(t, 16)
+	out := testBodyLimitRequest(router, http.MethodOptions, &quot;/v1/echo&quot;, &quot;&quot;, false)
+	if out.Code != http.StatusNoContent {
+		t.Fatal(&quot;正常预检应返回 204&quot;)
+	}
+	out = testBodyLimitRequest(router, http.MethodOptions, &quot;/v1/echo&quot;, strings.Repeat(&quot;x&quot;, 17), true)
+	if testErrorCode(t, out) != resp_body.ValidateErrorCode {
+		t.Fatal(&quot;超出上限的预检请求应被拒绝&quot;)
+	}
+	if out.Header().Get(&quot;Access-Control-Allow-Origin&quot;) != &quot;https://frontend.example&quot; {
+		t.Fatal(&quot;超大预检响应缺少跨域头&quot;)
+	}
+}
+
+// TestGlobalBodyLimitPreservesLoginRate 验证超大登录请求仍计入已有登录限流。
+func TestGlobalBodyLimitPreservesLoginRate(t *testing.T) {
+	router := testBodyLimitRouter(t, 16)
+	for i := 0; i &lt; loginMaxRequest; i++ {
+		out := testBodyLimitRequest(router, http.MethodPost, &quot;/v1/admin/login&quot;, strings.Repeat(&quot;x&quot;, 17), true)
+		if testErrorCode(t, out) != resp_body.ValidateErrorCode {
+			t.Fatal(&quot;前五次超大登录请求应返回参数错误&quot;)
+		}
+	}
+	out := testBodyLimitRequest(router, http.MethodPost, &quot;/v1/admin/login&quot;, &quot;{}&quot;, false)
+	if testErrorCode(t, out) != resp_body.LoginRateLimitCode {
+		t.Fatal(&quot;第六次登录请求应触发原有 IP 限流&quot;)
+	}
+	if out.Header().Get(&quot;Cache-Control&quot;) != &quot;no-store&quot; {
+		t.Fatal(&quot;登录限流响应缺少 no-store&quot;)
+	}
+}
+
+// TestGlobalBodyLimitReadFailure 验证读取失败时不向前端暴露原始错误。
+func TestGlobalBodyLimitReadFailure(t *testing.T) {
+	router := testBodyLimitRouter(t, 16)
+	req := httptest.NewRequest(http.MethodPost, &quot;/v1/echo&quot;, iotest.ErrReader(errors.New(&quot;SYNTHETIC_PRIVATE_DETAIL&quot;)))
+	out := httptest.NewRecorder()
+	router.ServeHTTP(out, req)
+	if testErrorCode(t, out) != resp_body.ValidateErrorCode || strings.Contains(out.Body.String(), &quot;SYNTHETIC_PRIVATE_DETAIL&quot;) {
+		t.Fatal(&quot;读取失败响应不应泄露底层错误&quot;)
+	}
+}
+
+// TestGlobalBodyLimitRejectsInvalidConfig 验证限制器不能使用零或负数作为上限。
+func TestGlobalBodyLimitRejectsInvalidConfig(t *testing.T) {
+	for _, value := range []int64{0, -1} {
+		if _, err := NewRequestBodyLimit(value); err == nil {
+			t.Fatal(&quot;零或负数上限应被拒绝&quot;)
+		}
+	}
+}
+
+// TestGlobalBodyLimitMultipart 验证上传请求也受上限限制且内容保持完整。
+func TestGlobalBodyLimitMultipart(t *testing.T) {
+	router := testBodyLimitRouter(t, 1024)
+	content := strings.Repeat(&quot;x&quot;, 64)
+	var payload bytes.Buffer
+	writer := multipart.NewWriter(&amp;payload)
+	file, err := writer.CreateFormFile(&quot;file&quot;, &quot;test.bin&quot;)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(file, content); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Len() &gt; 1024 {
+		t.Fatal(&quot;测试用 multipart 请求不应超过上限&quot;)
+	}
+	req := httptest.NewRequest(http.MethodPost, &quot;/v1/upload&quot;, &amp;payload)
+	req.Header.Set(&quot;Content-Type&quot;, writer.FormDataContentType())
+	out := httptest.NewRecorder()
+	router.ServeHTTP(out, req)
+	if out.Code != http.StatusOK || out.Body.String() != content {
+		t.Fatal(&quot;上限内的上传文件应保持完整&quot;)
+	}
+}
+
+// TestGlobalBodyLimitUsesBytes 验证多字节字符按请求体字节数计数。
+func TestGlobalBodyLimitUsesBytes(t *testing.T) {
+	router := testBodyLimitRouter(t, 16)
+	out := testBodyLimitRequest(router, http.MethodPost, &quot;/v1/echo&quot;, strings.Repeat(&quot;中&quot;, 5), true)
+	if out.Code != http.StatusOK {
+		t.Fatal(&quot;15 字节的请求应被允许&quot;)
+	}
+	out = testBodyLimitRequest(router, http.MethodPost, &quot;/v1/echo&quot;, strings.Repeat(&quot;中&quot;, 6), true)
+	if testErrorCode(t, out) != resp_body.ValidateErrorCode {
+		t.Fatal(&quot;18 字节的请求应被拒绝&quot;)
+	}
+}
+
+// runConcurrentBodyRequest 发送一个受限请求并统计失败次数。
+func runConcurrentBodyRequest(router *gin.Engine, wg *sync.WaitGroup, failures *atomic.Int64) {
+	defer wg.Done()
+	out := testBodyLimitRequest(router, http.MethodPost, &quot;/v1/echo&quot;, &quot;payload&quot;, true)
+	if out.Code != http.StatusOK || out.Body.String() != &quot;payload&quot; {
+		failures.Add(1)
+	}
+}
+
+// TestGlobalBodyLimitConcurrent 验证并发请求独立处理各自的请求体。
+func TestGlobalBodyLimitConcurrent(t *testing.T) {
+	router := testBodyLimitRouter(t, 16)
+	var wg sync.WaitGroup
+	var failures atomic.Int64
+	for i := 0; i &lt; 100; i++ {
+		wg.Add(1)
+		go runConcurrentBodyRequest(router, &amp;wg, &amp;failures)
+	}
+	wg.Wait()
+	if failures.Load() != 0 {
+		t.Fatalf(&quot;失败请求数：%d&quot;, failures.Load())
+	}
+}
+</code></pre></details>
+<pre><code>go test ./...
+go test -race ./middleware ./conf</code></pre>
+<p>如果你已经保存过 HTTP 超时方案中的 <code>conf/service_timeout_test.go</code>，需在其中构造 <code>Service</code> 的有效测试数据和测试 YAML 里补上 <code>MaxRequestBodyBytes</code> / <code>max_request_body_bytes</code>，否则新增的必填校验会使原测试失败。</p>
+<p>文档中的代码与测试已在临时副本中通过编译和竞态检查；另用内存数据库及合成账户验证了完整登录流程。没有写入真实数据库。</p></section>
+
+<section id="limits" aria-labelledby="limits-title"><div class="section-label">07 / BOUNDARIES</div><h2 id="limits-title">实施前需要了解的边界</h2>
+<ul><li>大小限制和 <code>ReadTimeout</code> 分别控制字节数量与读取时间，二者可以同时使用；请求读取超时或连接中断时，客户端不一定收到 JSON。</li><li>该方案对经过当前 Gin 中间件链的 API 请求生效。Gin 自带的部分路由自动重定向可能在中间件之前返回，不会进入 API 处理器；若要求这类 HTTP 请求也在到达 Gin 前受限，应在前置代理或网关层另配请求体上限。前置代理的超限响应格式可能与业务码不同。</li><li>全局中间件会先缓冲请求体，不适合依赖逐块处理的大文件或流式接口。上传请求会受到同一字节上限约束。</li><li>示例配置值 1 MiB 不是固定推荐值。调整时同时评估并发请求的内存占用，并确保代理与后端的限制、超时和前端错误处理协调一致。</li></ul>
+<p class="small">参考：<a href="https://pkg.go.dev/net/http#MaxBytesReader">Go 标准库 MaxBytesReader</a>、<a href="https://pkg.go.dev/github.com/gin-gonic/gin@v1.12.0#Context.FullPath">Gin v1.12 FullPath</a>。</p>
+<div class="note"><p>本文只提供可供审阅的方案，未自动修改工程源码、配置或数据库。</p></div></section>
+<footer>SolarNotesAdminAPI · 全局请求体大小配置方案 · 单文件 HTML，无外部脚本、字体或图片依赖。</footer></main></div>
+<script>
+"use strict";
+(() => {
+  const files = [...document.querySelectorAll("details.code-file")];
+  const expand = document.getElementById("expand-all");
+  const collapse = document.getElementById("collapse-all");
+  expand.hidden = false;
+  collapse.hidden = false;
+  expand.addEventListener("click", () => files.forEach(file => { file.open = true; }));
+  collapse.addEventListener("click", () => files.forEach(file => { file.open = false; }));
+
+  async function copyText(value) {
+    if (navigator.clipboard && window.isSecureContext) {
+      try { await navigator.clipboard.writeText(value); return true; } catch (_) { /* 尝试备用方式 */ }
+    }
+    const field = document.createElement("textarea");
+    field.value = value;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.left = "-9999px";
+    document.body.append(field);
+    field.select();
+    let copied = false;
+    try { copied = document.execCommand("copy"); } catch (_) { copied = false; }
+    field.remove();
+    return copied;
+  }
+
+  document.querySelectorAll("[data-copy]").forEach(button => {
+    const code = document.getElementById(button.dataset.copy);
+    const feedback = button.nextElementSibling;
+    if (!code) return;
+    button.hidden = false;
+    button.addEventListener("click", async () => {
+      const ok = await copyText(code.textContent);
+      feedback.textContent = ok ? "已复制" : "复制失败，请手动选择代码";
+      window.setTimeout(() => { feedback.textContent = ""; }, 2500);
+    });
+  });
+})();
+</script></body></html>
