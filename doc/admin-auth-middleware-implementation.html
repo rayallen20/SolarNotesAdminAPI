@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="SolarNotesAdminAPI 管理员鉴权中间件实现文档：Bearer JWT 验证、数据库 token_hash 比对、登录例外、CORS 预检、请求身份和撤销语义。">
+<meta name="description" content="SolarNotesAdminAPI 管理员鉴权中间件实现文档：外部声明免鉴权路由集合、Bearer JWT 验证、数据库 token_hash 比对、CORS 预检、请求身份和撤销语义。">
 <title>管理员鉴权中间件 · 实现文档 · Solar Notes</title>
 <style>
 :root{color-scheme:light;--paper:#f3f6f2;--ink:#1d302a;--muted:#5e7068;--line:#dce5dc;--green:#21644c;--soft:#e7f1e8;--amber:#846013;--warm:#fbf2db;--blue:#275e7a;--mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
@@ -27,7 +27,7 @@ details.code-file{border:1px solid var(--line);background:#fffefa;border-radius:
 </style></head><body>
 <a class="skip" href="#content">跳到正文</a>
 <div class="page"><aside class="sidebar" aria-label="文档导航">
-<div class="brand">SOLAR NOTES / DOCS</div><p>登录之外的 API 统一验证管理员身份。</p>
+<div class="brand">SOLAR NOTES / DOCS</div><p>由路由注册处声明豁免，其余 API 统一鉴权。</p>
 <nav aria-label="目录">
 <a href="#contract"><span>01</span>鉴权规则与响应</a>
 <a href="#flow"><span>02</span>流程与文件分工</a>
@@ -42,15 +42,16 @@ details.code-file{border:1px solid var(--line);background:#fffefa;border-radius:
 <main id="content"><header class="hero">
 <div class="eyebrow">ADMIN AUTHENTICATION / IMPLEMENTATION</div>
 <h1>管理员鉴权中间件<br>实现文档</h1>
-<p class="lede">除登录接口外，API 在执行业务处理器之前，必须通过 JWT 校验和数据库当前令牌摘要比对。</p>
+<p class="lede">由路由注册处传入免鉴权集合；其余 API 在执行业务处理器之前，必须通过 JWT 校验和数据库当前令牌摘要比对。</p>
 <div class="tags"><span class="tag">全局默认鉴权</span><span class="tag">Bearer JWT</span><span class="tag">校验 token_hash</span><span class="tag">HTTP 200 + 业务码</span><span class="tag">文档方案 · 手动实施</span></div>
 <div class="thesis"><p><strong>JWT 证明签名和有效期；数据库摘要确认这枚令牌仍被允许使用。</strong> 只有两项检查均通过，才把管理员 ID 写入请求上下文并继续执行。</p></div>
-<div class="page-tools"><button type="button" id="expand-all" hidden>展开全部代码</button><button type="button" id="collapse-all" hidden>折叠全部代码</button><span class="small">两处追加方法、两个新增文件、一份 main.go 注册示例。</span></div>
+<div class="page-tools"><button type="button" id="expand-all" hidden>展开全部代码</button><button type="button" id="collapse-all" hidden>折叠全部代码</button><span class="small">两处追加方法、两个中间件相关文件、一份 main.go 注册示例。</span></div>
 <noscript><p class="small">未启用 JavaScript 时，仍可展开代码并手动复制。</p></noscript>
 </header>
 
 <section id="contract" aria-labelledby="contract-title"><div class="section-label">01 / CONTRACT</div><h2 id="contract-title">哪些请求放行，哪些请求拒绝</h2>
-<p>唯一免鉴权的业务路由是 <code>POST /v1/admin/login</code>。匹配同时检查 HTTP 方法和 Gin 已匹配的完整路由；名称包含 <code>login</code>、路径前缀相似或使用其他请求方法，都不会因此免鉴权。</p>
+<p>免鉴权范围由 <code>main.go</code> 的路由注册代码决定：通过 <code>map[string][]string</code> 传入规则，key 为 HTTP 方法，value 为该方法下允许免鉴权的完整路由模板列表。当前只在 <code>http.MethodPost</code> 分组中配置 <code>/v1/admin/login</code>。中间件只识别传入的规则，不内置登录路径或 POST 例外；若注册处未加入该接口，它同样需要鉴权。</p>
+<p>匹配同时检查 <strong>HTTP 方法与 Gin 已匹配的完整路由模板</strong>，两者均按原值精确匹配。未命中集合的请求执行鉴权；传入 <code>nil</code> 或空集合时，所有到达该中间件的请求均需鉴权。名称包含 <code>login</code>、路径前缀相似或方法不同，都不会因此免鉴权。</p>
 <p>其他 API，包括现有 <code>GET /v1/planet/status</code>，统一从 <code>Authorization: Bearer &lt;完整 JWT&gt;</code> 请求头读取令牌。使用 Bearer 头传递令牌的格式可参见 <a class="source-ref" href="https://www.rfc-editor.org/info/rfc6750/">RFC 6750 §2.1 ↗</a>。</p>
 <div class="note"><p><strong>OPTIONS 预检沿用现有 CORS 处理。</strong> 它会在鉴权之前由 <code>CorsPreflight</code> 返回 204 并终止，不进入业务处理器。真正的 GET、POST 等 API 请求仍需鉴权。</p></div>
 <div class="table-wrap"><table><thead><tr><th>鉴权阶段的情况</th><th>JSON 业务码</th><th>处理结果</th></tr></thead><tbody>
@@ -83,7 +84,7 @@ details.code-file{border:1px solid var(--line);background:#fffefa;border-radius:
 
 <section id="flow" aria-labelledby="flow-title"><div class="section-label">02 / FLOW</div><h2 id="flow-title">HTTP、业务和模型各自承担职责</h2>
 <ol class="pipeline">
-<li><span class="index">01 / MIDDLEWARE</span><strong>读取 Bearer 令牌</strong><p>仅登录路由跳过；其他请求必须提供唯一的 Authorization 头。</p></li>
+<li><span class="index">01 / MIDDLEWARE</span><strong>匹配豁免或读取令牌</strong><p>仅命中外部传入的免鉴权集合时跳过；其余请求读取唯一的 Authorization 头。</p></li>
 <li><span class="index">02 / AUTH</span><strong>验证 JWT</strong><p>复用 ParseAdminToken，验证签名、HS256、iss、aud、exp、iat、jti 和管理员 ID。</p></li>
 <li><span class="index">03 / MODEL</span><strong>读取管理员记录</strong><p>按已验证的 ID 查询 id、name、token_hash。</p></li>
 <li><span class="index">04 / BUSINESS</span><strong>比对当前摘要</strong><p>复用 MatchSHA256，对完整 JWT 计算摘要并与数据库值比较。</p></li>
@@ -94,9 +95,9 @@ details.code-file{border:1px solid var(--line);background:#fffefa;border-radius:
 <div class="table-wrap"><table><thead><tr><th>文件</th><th>实施方式</th><th>职责</th></tr></thead><tbody>
 <tr><td><code>model/admin.go</code></td><td>追加 FindByID 方法</td><td>读取鉴权需要的数据库字段。</td></tr>
 <tr><td><code>biz/admin.go</code></td><td>追加 Authenticate 方法</td><td>执行令牌校验、记录检查和摘要比对。</td></tr>
-<tr><td><code>middleware/admin_auth.go</code></td><td>新增完整文件</td><td>路由放行、请求头解析、调用业务层、返回错误。</td></tr>
+<tr><td><code>middleware/admin_auth.go</code></td><td>按完整示例合并</td><td>保存规则副本、匹配豁免、解析请求头、调用业务层、返回错误。</td></tr>
 <tr><td><code>middleware/admin_context.go</code></td><td>新增完整文件</td><td>保存上下文键常量并提供安全的身份读取函数。</td></tr>
-<tr><td><code>main.go</code></td><td>按完整示例合并注册代码</td><td>在注册路由前安装全局鉴权。</td></tr>
+<tr><td><code>main.go</code></td><td>按完整示例合并注册代码</td><td>声明具体免鉴权路由，并在注册路由前安装全局鉴权。</td></tr>
 </tbody></table></div>
 <p>实现使用当前的 JWT 配置、<code>token_hash</code> 列、错误类型和响应包装器，不需要新增配置项、数据库列或业务依赖。模型和业务实体的方法仍放在各自已有的文件中。</p>
 </section>
@@ -226,11 +227,11 @@ func (a *Admin) Authenticate(ctx context.Context, rawToken string) error {
 
 <section id="middleware" aria-labelledby="middleware-title"><div class="section-label">05 / MIDDLEWARE</div><h2 id="middleware-title">新增鉴权中间件与身份读取函数</h2>
 <h3>鉴权中间件</h3>
-<p>新增 <code>middleware/admin_auth.go</code>。实例只保存登录路由配置；令牌和管理员业务实体都在每次请求内创建，避免不同请求共享身份状态。</p>
+<p>按下面的完整示例合并 <code>middleware/admin_auth.go</code>，字段 <code>exemptRoutes</code> 和构造函数形参均使用 <code>map[string][]string</code>。规则按 HTTP 方法分组，每组保存对应的完整路由模板切片。构造函数复制 map 以及每个路径切片，实例构造后只读取这些副本；令牌和管理员业务实体仍在每次请求内创建。</p>
 <details class="code-file" open>
-<summary><span class="file-mode">新增完整文件</span><span class="file-path">middleware/admin_auth.go</span></summary>
+<summary><span class="file-mode">完整文件示例</span><span class="file-path">middleware/admin_auth.go</span></summary>
 <div class="code-toolbar"><button type="button" data-copy="code-middleware" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
-<pre><code id="code-middleware" data-file="middleware/admin_auth.go" data-mode="新增完整文件">package middleware
+<pre><code id="code-middleware" data-file="middleware/admin_auth.go" data-mode="完整文件示例">package middleware
 
 import (
 	&quot;SolarNotesAdminAPI/auth&quot;
@@ -240,26 +241,46 @@ import (
 	&quot;errors&quot;
 	&quot;net/http&quot;
 	&quot;strings&quot;
+	&quot;unicode&quot;
 
 	&quot;github.com/gin-gonic/gin&quot;
 )
 
-// AdminAuth 对登录路由之外的请求执行管理员鉴权。
-// 实例只保存路由配置;每次请求的身份和令牌均使用局部变量。
+// AdminAuth 对免鉴权集合之外的请求执行管理员鉴权。
+// 实例只保存路由规则;每次请求的身份和令牌均使用局部变量。
 type AdminAuth struct {
-	loginFullPath string // loginFullPath 唯一免鉴权登录路由的完整路径。
+	exemptRoutes map[string][]string // exemptRoutes 的 key 为 HTTP 方法,value 为该方法下允许免鉴权的完整路由模板列表。
 }
 
-// NewAdminAuth 创建鉴权中间件;loginFullPath 应由路由前缀与登录路径拼接。
-func NewAdminAuth(loginFullPath string) (*AdminAuth, error) {
-	if loginFullPath == &quot;&quot; || !strings.HasPrefix(loginFullPath, &quot;/&quot;) {
-		return nil, errors.New(&quot;login route must be an absolute route path&quot;)
+// NewAdminAuth 校验并复制免鉴权规则;nil 或空集合表示所有请求都需要鉴权。
+// map 及其中每个路径切片均复制;构造完成后只读取副本。
+func NewAdminAuth(exemptRoutes map[string][]string) (*AdminAuth, error) {
+	routes := make(map[string][]string, len(exemptRoutes))
+	for method, paths := range exemptRoutes {
+		if method == &quot;&quot; || strings.IndexFunc(method, unicode.IsSpace) &gt;= 0 {
+			return nil, errors.New(&quot;exempt route method must not be empty or contain whitespace&quot;)
+		}
+		if len(paths) == 0 {
+			return nil, errors.New(&quot;exempt route method must specify at least one path&quot;)
+		}
+
+		// 为每个路径列表分配新的底层数组,避免与调用方共享切片数据。
+		copiedPaths := make([]string, len(paths))
+		for index, path := range paths {
+			if !strings.HasPrefix(path, &quot;/&quot;) ||
+				strings.ContainsAny(path, &quot;?#&quot;) ||
+				strings.IndexFunc(path, unicode.IsSpace) &gt;= 0 {
+				return nil, errors.New(&quot;exempt route path must start with / and contain no query, fragment or whitespace&quot;)
+			}
+			copiedPaths[index] = path
+		}
+		routes[method] = copiedPaths
 	}
-	return &amp;AdminAuth{loginFullPath: loginFullPath}, nil
+	return &amp;AdminAuth{exemptRoutes: routes}, nil
 }
 
 // Handle 读取 Bearer 令牌,调用业务层鉴权,成功后将管理员 ID 放入本次请求上下文。
-// 登录仅按 POST + 已匹配的完整路由放行;OPTIONS 由前面的 CorsPreflight 终止。
+// 只有方法与完整路由模板同时命中免鉴权集合时才跳过校验。
 func (a *AdminAuth) Handle(c *gin.Context) {
 	c.Header(&quot;Cache-Control&quot;, &quot;no-store&quot;)
 	if a == nil {
@@ -269,7 +290,7 @@ func (a *AdminAuth) Handle(c *gin.Context) {
 		return
 	}
 
-	if c.Request.Method == http.MethodPost &amp;&amp; c.FullPath() == a.loginFullPath {
+	if a.isExempt(c) {
 		c.Next()
 		return
 	}
@@ -290,6 +311,25 @@ func (a *AdminAuth) Handle(c *gin.Context) {
 	// 只保存确认后的身份 ID,不将密码摘要或原始 JWT 放入 Gin 上下文。
 	c.Set(adminIDContextKey, administrator.ID)
 	c.Next()
+}
+
+// isExempt 先按 HTTP 方法查找路径列表,再精确匹配 Gin 已匹配的完整路由模板。
+// 未匹配到已注册路由时 FullPath 为空,此时不允许免鉴权。
+func (a *AdminAuth) isExempt(c *gin.Context) bool {
+	paths, exists := a.exemptRoutes[c.Request.Method]
+	if !exists {
+		return false
+	}
+	fullPath := c.FullPath()
+	if fullPath == &quot;&quot; {
+		return false
+	}
+	for _, path := range paths {
+		if path == fullPath {
+			return true
+		}
+	}
+	return false
 }
 
 // bearerToken 只从唯一的 Authorization 请求头读取 Bearer 令牌。
@@ -324,9 +364,20 @@ func (a *AdminAuth) reject(c *gin.Context, err error) {
 	c.AbortWithStatusJSON(http.StatusOK, respBody)
 }
 </code></pre></details>
+<h3>集合的匹配与维护规则</h3>
+<ul>
+<li><strong>空集合代表全部鉴权。</strong> <code>NewAdminAuth(nil)</code> 与传入空 map 等效；不存在隐含的登录路由例外。</li>
+<li><strong>先查方法，再查路径列表。</strong> 以 <code>c.Request.Method</code> 查找 map 的 key，再遍历对应切片，与 <code>c.FullPath()</code> 精确比较。方法未配置，或完整路由模板未列入该方法的分组时，都继续执行鉴权。方法和路径不自动转换大小写，也不使用前缀或包含关系匹配。</li>
+<li><strong>各方法分组相互独立。</strong> key 建议使用 <code>http.MethodGet</code>、<code>http.MethodPost</code> 等标准库常量。同一路径如果允许多种方法免鉴权，需要分别加入对应分组；仅列入 GET 分组不会豁免其 POST 请求。</li>
+<li><strong>使用 Gin 注册的完整路由模板。</strong> value 切片中的每条路径包含路由组前缀；不包含域名、查询参数或片段。<code>c.FullPath()</code> 在未匹配路由时为空，中间件不会因此放行。<a class="source-ref" href="https://pkg.go.dev/github.com/gin-gonic/gin#Context.FullPath">Gin FullPath 文档 ↗</a></li>
+<li><strong>参数路由的豁免作用于整个模板。</strong> 例如配置 <code>GET /v1/public/:id</code> 后，该模板下所有 ID 均免鉴权；配置 <code>/v1/public/123</code> 不能匹配注册为 <code>/v1/public/:id</code> 的路由。Gin 的 <code>*path</code> 路由也按完整模板匹配，覆盖该模板匹配到的所有请求。</li>
+<li><strong>规则在构造时固定。</strong> map 和内部的每个路径切片都单独复制。构造完成后，修改原 map、替换其 value 或修改原切片元素，都不会改变中间件规则。构造过程中调用方不应并发修改输入；构造完成后内部副本只读。</li>
+<li><strong>整个 map 为空与某个方法的路径列表为空不同。</strong> 后者通常表示漏配，因此 <code>nil</code> 或长度为零的路径列表会使构造函数返回错误，不表示允许该方法访问所有路径。取消某条规则时，从对应方法分组的切片中移除该路径；列表变空时，再移除该方法的 key。同一分组内重复列出路径不会扩大豁免范围。</li>
+<li><strong>构造时检查基本格式。</strong> key 中的方法不能为空或含空白字符；value 中的每条路径必须以 <code>/</code> 开头，且不能含空白字符、<code>?</code> 或 <code>#</code>。规则是否与实际注册路由一致，仍由注册处维护；未匹配的规则不会扩大豁免范围。</li>
+</ul>
 <p><code>bearerToken()</code> 仅接受唯一的 Authorization 头，并用 <code>strings.Fields()</code> 拆为方案名与令牌两段。方案名比较不区分大小写，JWT 内容保留原样；不从 URL 查询参数、Cookie 或请求体中寻找备用令牌。JWT 长度继续由现有解析器限制为最多 4096 字节。</p>
 <p>拒绝请求必须调用 <code>c.AbortWithStatusJSON()</code>，然后从当前方法 <code>return</code>。仅返回 JSON 或仅从当前函数 return 都不足以可靠阻止 Gin 的其余处理器；Abort 停止后续链，return 结束当前函数。<a class="source-ref" href="https://pkg.go.dev/github.com/gin-gonic/gin#Context.AbortWithStatusJSON">Gin Context 文档 ↗</a></p>
-<p>中间件设置 <code>Cache-Control: no-store</code>，覆盖鉴权错误和后续受保护接口的响应。未通过鉴权时，不会写入身份 ID，也不会调用后续业务处理器。</p>
+<p>中间件设置 <code>Cache-Control: no-store</code>，覆盖经过它的响应。命中免鉴权集合时，只跳过身份校验并继续执行，不解析令牌、不查询数据库，也不写入管理员 ID。其余请求在鉴权失败时不会调用后续业务处理器；需要身份的接口应保留在受保护范围内。</p>
 <h3>读取本次请求的管理员 ID</h3>
 <p>新增 <code>middleware/admin_context.go</code>，将上下文键和读取函数单独保存，避免控制器重复手写键名和直接进行类型断言。</p>
 <details class="code-file" open>
@@ -362,9 +413,9 @@ func CurrentAdminID(c *gin.Context) (int64, bool) {
 </section>
 
 <section id="registration" aria-labelledby="registration-title"><div class="section-label">06 / REGISTRATION</div><h2 id="registration-title">在所有路由注册之前安装鉴权</h2>
-<p>下面的 <code>main.go</code> 示例基于当前工程。登录限流和鉴权例外使用同一个 <code>loginFullPath</code>，它由 <code>v1Prefix + loginPath</code> 生成。</p>
+<p>下面的 <code>main.go</code> 示例基于当前工程。由这里声明 <code>exemptRoutes</code> 并传给 <code>NewAdminAuth()</code>；当前只加入 <code>POST /v1/admin/login</code>。登录限流与这条豁免规则使用同一个 <code>loginFullPath</code>，它由 <code>v1Prefix + loginPath</code> 生成；鉴权中间件本身不认识登录接口。</p>
 <div class="flow"><div class="flow-step"><strong>01 · CorsHeaders</strong><span>先写入跨域响应头。</span></div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-step"><strong>02 · LoginRouteLimit</strong><span>仅对 POST 登录路由计数。</span></div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-step"><strong>03 · RequestBodyLimit</strong><span>检查全局请求体大小。</span></div></div>
-<div class="flow"><div class="flow-step"><strong>04 · CorsPreflight</strong><span>OPTIONS 在此结束。</span></div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-step"><strong>05 · AdminAuth</strong><span>登录放行，其他请求验证身份。</span></div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-step"><strong>06 · Controller</strong><span>执行请求对应的业务逻辑。</span></div></div>
+<div class="flow"><div class="flow-step"><strong>04 · CorsPreflight</strong><span>OPTIONS 在此结束。</span></div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-step"><strong>05 · AdminAuth</strong><span>命中豁免集合则放行，其余请求验证身份。</span></div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-step"><strong>06 · Controller</strong><span>执行请求对应的业务逻辑。</span></div></div>
 <details class="code-file" open>
 <summary><span class="file-mode">替换完整文件</span><span class="file-path">main.go</span></summary>
 <div class="code-toolbar"><button type="button" data-copy="code-main" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
@@ -420,7 +471,13 @@ func main() {
 	loginPath := &quot;/admin/login&quot;
 	loginFullPath := v1Prefix + loginPath
 	loginLimiter := middleware.NewLoginRouteLimit(loginFullPath)
-	adminAuth, err := middleware.NewAdminAuth(loginFullPath)
+
+	// 由路由注册处声明免鉴权规则;当前只允许 POST 登录接口免鉴权。
+	// key 为 HTTP 方法,value 为该方法下允许免鉴权的完整路由模板列表。
+	exemptRoutes := map[string][]string{
+		http.MethodPost: {loginFullPath},
+	}
+	adminAuth, err := middleware.NewAdminAuth(exemptRoutes)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -464,6 +521,8 @@ func main() {
 }
 </code></pre></details>
 <div class="note"><p><strong>router.Use 必须早于路由组创建和路由注册。</strong> Gin 会把当时的中间件链合并到路由；不要先注册接口，再补装鉴权。后续在这之后新增的 /v1、/v2 等路由都会默认受到保护。</p></div>
+<p>以后新增公开接口时，将完整路由模板加入对应 HTTP 方法的分组即可。例如 <code>http.MethodGet: {"/v1/public/a", "/v1/public/b"}</code> 表示这两条路由的 GET 请求免鉴权；若其中某条路由的 POST 也需要豁免，再将同一路径加入 <code>http.MethodPost</code> 分组。此例仅解释写法，不包含在当前 main.go 的实际配置中。</p>
+<p>路由注册仍需照常完成，豁免集合本身不会创建 API。更新规则后随应用重新构造中间件，不在请求处理期间修改内部 map 或路径切片。</p>
 <p>这里使用全局中间件，因此不需要在 <code>v1.GET("/planet/status", ...)</code> 上再单独添加一次鉴权，也不需要给每个新 API 重复注册。全局登录限流保持原位置，不要在登录路由上重复挂载。</p>
 <p>这个顺序保留原有响应优先级：登录限流和请求体错误可能先于鉴权返回；请求体超限不会进入鉴权或业务处理器。未匹配的路径也可能先得到鉴权错误；身份有效后，才继续由 Gin 处理未匹配路由。Gin 自身的路由重定向不执行目标业务处理器，客户端随后访问目标路由时仍需通过鉴权。</p>
 </section>
@@ -483,7 +542,7 @@ func main() {
 </section>
 
 <section id="verification" aria-labelledby="verification-title"><div class="section-label">08 / VERIFICATION</div><h2 id="verification-title">实施顺序与已验证场景</h2>
-<ol><li>在 model/admin.go 追加 FindByID。</li><li>在 biz/admin.go 追加 Authenticate。</li><li>新增两个 middleware 文件。</li><li>按 main.go 示例，在路由组创建之前安装全局鉴权。</li><li>格式化并检查编译；启动后验证未鉴权、有效令牌和预检请求。</li></ol>
+<ol><li>在 model/admin.go 追加 FindByID；已有该方法时保留一份。</li><li>在 biz/admin.go 追加 Authenticate；已有该方法时保留一份。</li><li>新增 admin_context.go，按示例合并 admin_auth.go；已有相应文件时按示例合并。</li><li>按 main.go 示例传入 map[string][]string，在路由组创建之前安装全局鉴权。</li><li>格式化并检查编译；启动后验证未鉴权、有效令牌和预检请求。</li></ol>
 <details class="code-file" open>
 <summary><span class="file-mode">合并后执行</span><span class="file-path">工程根目录</span></summary>
 <div class="code-toolbar"><button type="button" data-copy="code-commands" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
@@ -496,6 +555,8 @@ go vet ./...
 <tr><td>26 个 JWT / 请求头场景</td><td>缺失、格式错误、重复头、超长、正确令牌、方案名大小写、错误签名 / 算法 / iss / aud / sub、缺少声明、过期以及复合错误。</td><td class="status-pass">通过</td></tr>
 <tr><td>7 个数据库状态场景</td><td>摘要匹配、清空、不匹配、损坏、管理员删除、数据库关闭和未初始化。</td><td class="status-pass">通过</td></tr>
 <tr><td>令牌替换与撤销</td><td>同一中间件实例中，新摘要使旧令牌失效；清空摘要后两枚令牌都被拒绝。</td><td class="status-pass">通过</td></tr>
+<tr><td>免鉴权集合</td><td>覆盖 nil / 空 map、同方法多路径、不同方法分组隔离、同路径多个方法、大小写、相似路径、查询参数、重复路径、参数与通配模板、未注册路径；未配置的登录接口仍需鉴权。</td><td class="status-pass">通过</td></tr>
+<tr><td>规则校验与复制</td><td>拒绝无效方法、无效路径及空路径列表；构造后修改原 map、替换路径列表或修改原切片元素均不改变豁免范围；并发检查通过。</td><td class="status-pass">通过</td></tr>
 <tr><td>路由保护与中间件顺序</td><td>实际 main.go 注册代码；登录不要求令牌；新 /v2 路由默认受保护；相似登录路径不放行；预检、请求体限制和登录限流按既定顺序工作。</td><td class="status-pass">通过</td></tr>
 <tr><td>真实天体状态处理器</td><td>使用当前 planet.ShowStatus 控制器，在鉴权通过后返回九条正确状态。</td><td class="status-pass">通过</td></tr>
 <tr><td>请求身份与模型字段</td><td>大于 2⁵³ 的 ID 保持精度；失败清空旧身份；模型复用不带入旧主键，也不加载密码摘要。</td><td class="status-pass">通过</td></tr>
@@ -529,7 +590,7 @@ go vet ./...
   -H &#x27;Access-Control-Request-Headers: Authorization&#x27; \
   &#x27;http://127.0.0.1:4060/v1/planet/status&#x27;
 </code></pre></details>
-<div class="note"><p>本文是实现文档。代码已在临时副本验证；实际工程仅新增这份 HTML，源码与数据库由你阅读后按方案实施。</p></div>
+<div class="note"><p>本文是实现文档。代码已在临时副本验证；本次仅更新这份 HTML，源码与数据库由你阅读后按方案实施。</p></div>
 </section>
 <footer>SolarNotesAdminAPI · 管理员鉴权中间件实现文档 · 2026-11-15 · 单文件 HTML，无外部脚本、字体或图片依赖。</footer>
 </main></div><script>

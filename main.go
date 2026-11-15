@@ -48,19 +48,35 @@ func main() {
 	// 为登录路由提供唯一的路径来源,避免限流匹配和注册路径不一致
 	v1Prefix := "/v1"
 	loginPath := "/admin/login"
-	loginLimiter := middleware.NewLoginRouteLimit(v1Prefix + loginPath)
+	loginFullPath := v1Prefix + loginPath
+	loginLimiter := middleware.NewLoginRouteLimit(loginFullPath)
+
+	// 声明免鉴权规则
+	// key 为 HTTP 方法,value 为该方法下允许免鉴权的完整路由模板列表
+	exemptRoutes := map[string][]string{
+		http.MethodPost: {loginFullPath},
+	}
+	adminAuth, err := middleware.NewAdminAuth(exemptRoutes)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	bodyLimit, err := middleware.NewRequestBodyLimit(configInstance.Service.MaxRequestBodyBytes)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// 先设置跨域头,再设置登录限流,再限制请求体大小,最后处理预检
 	router.Use(
+		// 设置跨域头
 		middleware.CorsHeaders,
+		// 设置登录限流
 		loginLimiter.Handle,
+		// 限制请求体大小
 		bodyLimit.Handle,
+		// 处理预检请求
 		middleware.CorsPreflight,
+		// 鉴权
+		adminAuth.Handle,
 	)
 
 	v1 := router.Group(v1Prefix)
@@ -70,7 +86,7 @@ func main() {
 	}
 
 	server := &http.Server{
-		// 开发环境沿用当前监听地址。
+		// 开发环境沿用当前监听地址
 		Addr: "0.0.0.0:" + configInstance.Service.Port,
 		// TODO: 使用同机 Nginx 部署时,将上一行改为:
 		// Addr: "127.0.0.1:" + configInstance.Service.Port,

@@ -29,7 +29,7 @@ func (a *Admin) Login(ctx context.Context, req *reqAdmin.LoginReq) error {
 		}
 	}
 
-	a.flush()
+	a.flush(ctx)
 
 	if ctx == nil || req == nil || req.Admin == nil {
 		return sys_error.InvalidLoginRequestErr
@@ -89,7 +89,7 @@ func (a *Admin) Login(ctx context.Context, req *reqAdmin.LoginReq) error {
 }
 
 // flush 本方法用于清空管理员业务实体的所有字段,以防止实例复用导致的旧数据残留
-func (a *Admin) flush() {
+func (a *Admin) flush(ctx context.Context) {
 	a.ID = 0
 	a.Username = ""
 	a.Password = ""
@@ -105,4 +105,87 @@ func (a *Admin) fillByORM(ctx context.Context, record *model.Admin) {
 	a.ID = record.ID
 	a.Username = record.Name
 	a.Password = record.PasswordHash
+}
+
+// Authenticate 本方法用于验证管理员的访问令牌是否有效,并根据验证结果返回相应的错误信息
+func (a *Admin) Authenticate(ctx context.Context, rawToken string) error {
+	if a == nil {
+		return &sys_error.InternalError{
+			Cause: errors.New("nil administrator entity"),
+		}
+	}
+	
+	a.flush(ctx)
+
+	if ctx == nil {
+		return &sys_error.InternalError{
+			Cause: errors.New("nil authentication context"),
+		}
+	}
+
+	if rawToken == "" {
+		return auth.InvalidTokenErr
+	}
+
+	config := conf.Get()
+	if config == nil {
+		return &sys_error.InternalError{
+			Cause: errors.New("configuration is not loaded"),
+		}
+	}
+
+	options := &auth.JWTOptions{
+		Issuer:     config.JWT.Issuer,
+		Audience:   config.JWT.Audience,
+		Lifetime:   config.JWT.Lifetime(),
+		SigningKey: config.JWT.SigningKey(),
+	}
+
+	// 复用已有解析器 先验证签名/算法/标准声明/有效期/管理员 ID
+	adminID, err := auth.ParseAdminToken(rawToken, options)
+	if err != nil {
+		if errors.Is(err, auth.ExpiredTokenErr) {
+			return err
+		}
+
+		if errors.Is(err, auth.InvalidTokenErr) {
+			return err
+		}
+
+		return &sys_error.InternalError{
+			Cause: err,
+		}
+	}
+
+	record := &model.Admin{}
+	err = record.FindByID(ctx, adminID)
+	if errors.Is(err, model.AdminNotFoundErr) {
+		return auth.InvalidTokenErr
+	}
+
+	if err != nil {
+		return &sys_error.DatabaseError{
+			Cause: err,
+		}
+	}
+
+	if record.TokenHash == "" {
+		return auth.InvalidTokenErr
+	}
+
+	// MatchSHA256 对原始 JWT 计算摘要,并进行恒定时间比较
+	matched, err := auth.MatchSHA256(rawToken, record.TokenHash)
+	if err != nil {
+		// 非空摘要格式损坏属于内部数据错误,不能放行请求
+		return &sys_error.InternalError{
+			Cause: err,
+		}
+	}
+
+	if !matched {
+		return auth.InvalidTokenErr
+	}
+
+	a.fillByORM(ctx, record)
+	return nil
 }

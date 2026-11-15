@@ -16,7 +16,7 @@ type RequestBodyLimit struct {
 	maxBytes int64 // maxBytes 本字段用于表示允许的最大请求体字节数
 }
 
-// NewRequestBodyLimit 创建请求体限制器；上限必须为正数。
+// NewRequestBodyLimit 创建请求体限制器(上限必须为正数)
 func NewRequestBodyLimit(maxBytes int64) (*RequestBodyLimit, error) {
 	if maxBytes <= 0 {
 		return nil, errors.New("请求体大小上限必须大于 0")

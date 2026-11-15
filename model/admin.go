@@ -75,3 +75,34 @@ func (a *Admin) UpdateTokenHash(ctx context.Context, newTokenHash string) (bool,
 	a.TokenHash = newTokenHash
 	return true, nil
 }
+
+// FindByID 本方法用于根据给定 ID 查询管理员数据.不存在的管理员会返回 AdminNotFoundErr,其他错误会原样返回
+func (a *Admin) FindByID(ctx context.Context, id int64) error {
+	if a == nil {
+		return errors.New("administrator model is nil")
+	}
+	if ctx == nil {
+		return errors.New("administrator query context is nil")
+	}
+	if id <= 0 {
+		return errors.New("administrator ID must be positive")
+	}
+	if db.DB == nil {
+		return errors.New("database is not initialized")
+	}
+
+	// 使用临时记录,避免接收者原有 ID 参与 GORM 的查询条件
+	record := &Admin{}
+	err := db.DB.WithContext(ctx).Where("id = ?", id).Take(record).Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return AdminNotFoundErr
+	}
+
+	if err != nil {
+		return err
+	}
+
+	*a = *record
+	return nil
+}
