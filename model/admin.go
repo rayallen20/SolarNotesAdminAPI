@@ -11,6 +11,7 @@ import (
 // AdminNotFoundErr 本错误用于将数据库记录不存在转换为业务层可识别的错误
 var AdminNotFoundErr = errors.New("administrator not found")
 
+// Admin 本结构体用于和数据库中的admin表进行映射
 type Admin struct {
 	ID           int64  `gorm:"column:id;primaryKey"` // ID 管理员ID
 	Name         string `gorm:"column:name"`          // Name 管理员用户名

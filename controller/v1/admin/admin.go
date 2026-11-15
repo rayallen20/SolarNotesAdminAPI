@@ -21,13 +21,6 @@ func Login(c *gin.Context) {
 
 	err := c.ShouldBindJSON(req)
 	if err != nil {
-		var sizeErr *http.MaxBytesError
-		if errors.As(err, &sizeErr) {
-			respBody.ValidateError(errors.New("请求体超过大小限制"))
-			c.JSON(http.StatusOK, respBody)
-			return
-		}
-
 		respBody.ValidateError(err)
 		c.JSON(http.StatusOK, respBody)
 		return

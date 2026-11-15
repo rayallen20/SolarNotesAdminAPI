@@ -10,6 +10,7 @@ import (
 	"errors"
 )
 
+// Admin 本结构体用于表示管理员业务实体
 type Admin struct {
 	ID          int64  // ID 管理员ID
 	Username    string // Username 管理员用户名
@@ -17,6 +18,10 @@ type Admin struct {
 	AccessToken string // AccessToken 管理员登录token
 }
 
+// Login 本方法用于处理管理员登录业务逻辑,包括:
+// - 验证用户名和密码
+// - 生成访问令牌
+// - 更新数据库中的令牌哈希值
 func (a *Admin) Login(ctx context.Context, req *reqAdmin.LoginReq) error {
 	if a == nil {
 		return &sys_error.InternalError{
@@ -77,7 +82,7 @@ func (a *Admin) Login(ctx context.Context, req *reqAdmin.LoginReq) error {
 		return sys_error.LoginStateChangedErr
 	}
 
-	a.fillByORM(record)
+	a.fillByORM(ctx, record)
 	a.AccessToken = token
 
 	return nil
@@ -92,7 +97,7 @@ func (a *Admin) flush() {
 }
 
 // fillByORM 本方法用于根据给定的管理员ORM对象填充管理员业务结构体
-func (a *Admin) fillByORM(record *model.Admin) {
+func (a *Admin) fillByORM(ctx context.Context, record *model.Admin) {
 	if a == nil || record == nil {
 		return
 	}

@@ -3,6 +3,7 @@ package main
 import (
 	"SolarNotesAdminAPI/conf"
 	"SolarNotesAdminAPI/controller/v1/admin"
+	"SolarNotesAdminAPI/controller/v1/planet"
 	"SolarNotesAdminAPI/db"
 	"SolarNotesAdminAPI/middleware"
 	"SolarNotesAdminAPI/snowflake"
@@ -54,7 +55,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// 先设置跨域头和登录限流,再限制所有请求体,最后处理预检
+	// 先设置跨域头,再设置登录限流,再限制请求体大小,最后处理预检
 	router.Use(
 		middleware.CorsHeaders,
 		loginLimiter.Handle,
@@ -65,6 +66,7 @@ func main() {
 	v1 := router.Group(v1Prefix)
 	{
 		v1.POST(loginPath, admin.Login)
+		v1.GET("/planet/status", planet.ShowStatus)
 	}
 
 	server := &http.Server{

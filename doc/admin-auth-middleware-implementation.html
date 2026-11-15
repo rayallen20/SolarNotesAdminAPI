@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="SolarNotesAdminAPI 管理员鉴权中间件实现文档：Bearer JWT 验证、数据库 token_hash 比对、登录例外、CORS 预检、请求身份和撤销语义。">
+<title>管理员鉴权中间件 · 实现文档 · Solar Notes</title>
+<style>
+:root{color-scheme:light;--paper:#f3f6f2;--ink:#1d302a;--muted:#5e7068;--line:#dce5dc;--green:#21644c;--soft:#e7f1e8;--amber:#846013;--warm:#fbf2db;--blue:#275e7a;--mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:24px}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.82 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+a{color:var(--green);text-underline-offset:4px;overflow-wrap:anywhere}a:hover{color:#103d2b}:focus-visible{outline:3px solid #4485ae;outline-offset:3px}[hidden]{display:none!important}
+.skip{position:absolute;top:-80px;left:20px;background:white;padding:10px 16px;z-index:4}.skip:focus{top:12px}
+.page{width:min(1350px,100%);margin:auto;display:grid;grid-template-columns:228px minmax(0,1fr);gap:54px;padding:40px 38px 80px}.sidebar{position:sticky;top:28px;align-self:start;max-height:calc(100vh - 56px);overflow:auto}
+.brand{font-size:12px;font-weight:800;letter-spacing:.1em;color:var(--green)}.brand::before{content:"";display:inline-block;width:12px;height:12px;border:3px solid var(--green);border-radius:50%;margin-right:8px;vertical-align:-1px}.sidebar p{font-size:13px;color:var(--muted);line-height:1.7}.sidebar nav{display:grid;gap:3px;margin-top:22px}.sidebar nav a{display:flex;gap:12px;padding:7px 9px;border-radius:7px;text-decoration:none;color:var(--muted);font-size:14px}.sidebar nav a:hover{background:var(--soft);color:var(--green)}.sidebar nav span{color:var(--green);font:12px/2 var(--mono)}.side-note{border-top:1px solid var(--line);padding-top:16px;margin-top:22px}
+main{min-width:0}.eyebrow,.section-label{color:var(--green);font:700 12px/1.5 var(--mono);letter-spacing:.1em}.hero h1{font-size:clamp(33px,4vw,48px);line-height:1.25;letter-spacing:-.03em;margin:16px 0}.lede{font-size:18px;color:var(--muted);max-width:820px}.tags{display:flex;flex-wrap:wrap;gap:8px;margin:24px 0}.tag{border:1px solid var(--line);border-radius:30px;padding:4px 11px;font-size:12px;background:white;color:var(--muted)}
+.thesis{background:#194b39;color:#fff;border-radius:14px;padding:22px 25px}.thesis p{margin:0}.thesis strong{color:#d4f5dc}.page-tools{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:20px 0}.page-tools button,.code-toolbar button{font:inherit;font-size:13px;border:1px solid var(--green);border-radius:7px;background:white;color:var(--green);cursor:pointer;padding:6px 12px}.page-tools button:hover,.code-toolbar button:hover{background:var(--soft)}
+section{padding-top:42px;margin-top:10px}h2{font-size:27px;line-height:1.4;letter-spacing:-.02em;margin:8px 0 20px}h3{font-size:19px;line-height:1.55;margin:27px 0 10px}p{margin:12px 0}code{font:.87em/1.7 var(--mono);background:#e8f0e8;border-radius:4px;padding:2px 5px;overflow-wrap:anywhere}pre{margin:14px 0;padding:19px 22px;background:#1d3029;color:#e5efe6;border-radius:10px;overflow-x:auto;tab-size:2;font:13px/1.75 var(--mono)}pre code{font:inherit;background:transparent;color:inherit;padding:0;border-radius:0;overflow-wrap:normal}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:18px 0}.card{border:1px solid var(--line);background:#fffefa;border-radius:12px;padding:18px 19px}.card .n{color:var(--green);font:12px/1.5 var(--mono)}.card h3{margin:6px 0;font-size:16px}.card p{font-size:14px;color:var(--muted);margin:0}
+.note{background:var(--soft);border-left:3px solid var(--green);border-radius:0 8px 8px 0;padding:15px 18px;margin:20px 0;font-size:14px}.note.warning{background:var(--warm);border-color:var(--amber)}.note p{margin:0}.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:white;margin:18px 0}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;vertical-align:top;padding:12px 15px;border-bottom:1px solid var(--line);min-width:105px}th{color:var(--green);background:#edf3ec;font-weight:650}tr:last-child td{border-bottom:0}ul,ol{padding-left:23px}li{margin:8px 0}.small{font-size:13px;color:var(--muted)}
+details.code-file{border:1px solid var(--line);background:#fffefa;border-radius:10px;overflow:hidden;margin:18px 0}details.code-file summary{padding:14px 17px;cursor:pointer;font-weight:650;overflow-wrap:anywhere;line-height:1.7}.file-mode{display:inline-block;font-size:11px;padding:2px 7px;border-radius:5px;background:var(--soft);color:var(--green);margin-right:9px;font-weight:500}.file-path{font:13px/1.7 var(--mono)}.code-toolbar{display:flex;align-items:center;gap:10px;padding:9px 16px;border-top:1px solid var(--line)}.copy-feedback{font-size:12px;color:var(--muted)}.code-file pre{margin:0;border-radius:0;font-size:12.5px}footer{margin-top:45px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+@media(max-width:1050px){.page{gap:27px;padding-left:24px;padding-right:24px;grid-template-columns:185px minmax(0,1fr)}}@media(max-width:800px){.page{display:block;padding:24px 20px 55px}.sidebar{position:static;max-height:none;margin-bottom:32px}.sidebar nav{display:flex;gap:5px;overflow-x:auto;margin-top:15px;padding-bottom:8px}.sidebar nav a{white-space:nowrap;border:1px solid var(--line);padding:5px 9px}.sidebar p,.side-note{display:none}.grid{grid-template-columns:1fr}h2{font-size:24px}}
+@media(max-width:520px){pre{padding:16px;font-size:12px}th,td{padding:10px 12px}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}@media print{body{background:white;color:black;font-size:11pt}.page{display:block;width:100%;padding:0}.sidebar,.page-tools,.code-toolbar,.skip{display:none!important}.thesis{background:#eee;color:black}.thesis strong{color:black}section{padding-top:20px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f3f3;color:black;font-size:8pt}.code-file{overflow:visible!important}.table-wrap{overflow:visible}a{color:black}}
+
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:10px;margin:24px 0}.flow-step{flex:1 1 175px;border:1px solid var(--line);border-radius:10px;background:#fffefa;padding:13px 16px;font-size:14px}.flow-step strong{display:block;color:var(--green);font-size:15px}.flow-step span{color:var(--muted)}.flow-arrow{display:flex;align-items:center;color:var(--green);font-size:18px}.lead-code{font:13px/1.7 var(--mono);color:var(--green)}@media(max-width:800px){.flow-arrow{display:none}.flow-step{flex-basis:100%}}
+
+.endpoint{display:inline-flex;align-items:center;gap:10px;margin:5px 0 13px;color:var(--green);font:14px/1.6 var(--mono)}.endpoint b{font-size:11px;letter-spacing:.05em;background:var(--soft);padding:3px 8px;border-radius:5px}.status-pass{color:var(--green);font-weight:650}.change-list strong{color:var(--green)}.table-wrap caption{text-align:left;padding:12px 15px;background:#fffefa;font-weight:650}.inline-path{font-family:var(--mono);font-size:.9em}main section{scroll-margin-top:20px}.flow-step code{font-size:12px}
+
+.pipeline{list-style:none;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:22px 0}.pipeline li{margin:0;border:1px solid var(--line);background:#fffefa;border-radius:10px;padding:16px}.pipeline .index{display:block;font:12px/1.5 var(--mono);color:var(--green);margin-bottom:5px}.pipeline strong{display:block;font-size:15px}.pipeline p{font-size:13px;color:var(--muted);margin:5px 0 0}.source-ref{font-size:12px;white-space:normal}.rule-line{border-top:1px solid var(--line);padding-top:16px;margin-top:22px}.endpoint span{overflow-wrap:anywhere}@media(max-width:800px){.pipeline{grid-template-columns:1fr}.pipeline li{padding:13px 15px}}
+</style></head><body>
+<a class="skip" href="#content">跳到正文</a>
+<div class="page"><aside class="sidebar" aria-label="文档导航">
+<div class="brand">SOLAR NOTES / DOCS</div><p>登录之外的 API 统一验证管理员身份。</p>
+<nav aria-label="目录">
+<a href="#contract"><span>01</span>鉴权规则与响应</a>
+<a href="#flow"><span>02</span>流程与文件分工</a>
+<a href="#model"><span>03</span>模型查询方法</a>
+<a href="#business"><span>04</span>业务层鉴权方法</a>
+<a href="#middleware"><span>05</span>中间件与请求身份</a>
+<a href="#registration"><span>06</span>全局注册与顺序</a>
+<a href="#revocation"><span>07</span>令牌撤销与边界</a>
+<a href="#verification"><span>08</span>实施与验证</a>
+</nav><p class="side-note">2026-11-15 · 后端实现文档<br>独立 HTML · 可复制代码<br><a href="planet-status-backend-fix.html">天体状态接口修复方案 ↗</a></p>
+</aside>
+<main id="content"><header class="hero">
+<div class="eyebrow">ADMIN AUTHENTICATION / IMPLEMENTATION</div>
+<h1>管理员鉴权中间件<br>实现文档</h1>
+<p class="lede">除登录接口外，API 在执行业务处理器之前，必须通过 JWT 校验和数据库当前令牌摘要比对。</p>
+<div class="tags"><span class="tag">全局默认鉴权</span><span class="tag">Bearer JWT</span><span class="tag">校验 token_hash</span><span class="tag">HTTP 200 + 业务码</span><span class="tag">文档方案 · 手动实施</span></div>
+<div class="thesis"><p><strong>JWT 证明签名和有效期；数据库摘要确认这枚令牌仍被允许使用。</strong> 只有两项检查均通过，才把管理员 ID 写入请求上下文并继续执行。</p></div>
+<div class="page-tools"><button type="button" id="expand-all" hidden>展开全部代码</button><button type="button" id="collapse-all" hidden>折叠全部代码</button><span class="small">两处追加方法、两个新增文件、一份 main.go 注册示例。</span></div>
+<noscript><p class="small">未启用 JavaScript 时，仍可展开代码并手动复制。</p></noscript>
+</header>
+
+<section id="contract" aria-labelledby="contract-title"><div class="section-label">01 / CONTRACT</div><h2 id="contract-title">哪些请求放行，哪些请求拒绝</h2>
+<p>唯一免鉴权的业务路由是 <code>POST /v1/admin/login</code>。匹配同时检查 HTTP 方法和 Gin 已匹配的完整路由；名称包含 <code>login</code>、路径前缀相似或使用其他请求方法，都不会因此免鉴权。</p>
+<p>其他 API，包括现有 <code>GET /v1/planet/status</code>，统一从 <code>Authorization: Bearer &lt;完整 JWT&gt;</code> 请求头读取令牌。使用 Bearer 头传递令牌的格式可参见 <a class="source-ref" href="https://www.rfc-editor.org/info/rfc6750/">RFC 6750 §2.1 ↗</a>。</p>
+<div class="note"><p><strong>OPTIONS 预检沿用现有 CORS 处理。</strong> 它会在鉴权之前由 <code>CorsPreflight</code> 返回 204 并终止，不进入业务处理器。真正的 GET、POST 等 API 请求仍需鉴权。</p></div>
+<div class="table-wrap"><table><thead><tr><th>鉴权阶段的情况</th><th>JSON 业务码</th><th>处理结果</th></tr></thead><tbody>
+<tr><td>JWT 有效，管理员存在，token_hash 匹配</td><td>由业务接口决定</td><td>写入管理员 ID，继续执行。</td></tr>
+<tr><td>未携带令牌、Bearer 格式不正确、重复 Authorization 头</td><td><code>20004</code></td><td>拒绝，不查询管理员记录。</td></tr>
+<tr><td>签名、算法、声明或管理员 ID 不合法</td><td><code>20004</code></td><td>拒绝，不查询管理员记录。</td></tr>
+<tr><td>JWT 仅因过期而失败</td><td><code>20003</code></td><td>拒绝，不查询管理员记录。</td></tr>
+<tr><td>管理员已删除、摘要为空或与当前 JWT 不匹配</td><td><code>20004</code></td><td>拒绝，令牌已不再有效。</td></tr>
+<tr><td>数据库查询失败</td><td><code>10201</code></td><td>拒绝，不把数据库故障解释为正常登录状态。</td></tr>
+<tr><td>配置异常、非空摘要格式损坏等内部错误</td><td><code>500</code></td><td>拒绝，返回统一内部错误消息。</td></tr>
+</tbody></table></div>
+<p>以上错误沿用项目的 <strong>HTTP 200 + JSON 业务码</strong> 约定，<code>data</code> 为 <code>{}</code>。鉴权中间件不重定向页面，也不会在成功时提前发送响应。</p>
+<details class="code-file">
+<summary><span class="file-mode">JSON · HTTP 200</span><span class="file-path">令牌缺失 / 无效 / 已撤销</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-invalid-response" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-invalid-response" data-file="令牌缺失 / 无效 / 已撤销" data-mode="JSON · HTTP 200">{
+  &quot;code&quot;: 20004,
+  &quot;message&quot;: &quot;登录状态无效,请重新登录&quot;,
+  &quot;data&quot;: {}
+}</code></pre></details>
+<details class="code-file">
+<summary><span class="file-mode">JSON · HTTP 200</span><span class="file-path">令牌仅因过期而失败</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-expired-response" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-expired-response" data-file="令牌仅因过期而失败" data-mode="JSON · HTTP 200">{
+  &quot;code&quot;: 20003,
+  &quot;message&quot;: &quot;登录已过期,请重新登录&quot;,
+  &quot;data&quot;: {}
+}</code></pre></details>
+</section>
+
+<section id="flow" aria-labelledby="flow-title"><div class="section-label">02 / FLOW</div><h2 id="flow-title">HTTP、业务和模型各自承担职责</h2>
+<ol class="pipeline">
+<li><span class="index">01 / MIDDLEWARE</span><strong>读取 Bearer 令牌</strong><p>仅登录路由跳过；其他请求必须提供唯一的 Authorization 头。</p></li>
+<li><span class="index">02 / AUTH</span><strong>验证 JWT</strong><p>复用 ParseAdminToken，验证签名、HS256、iss、aud、exp、iat、jti 和管理员 ID。</p></li>
+<li><span class="index">03 / MODEL</span><strong>读取管理员记录</strong><p>按已验证的 ID 查询 id、name、token_hash。</p></li>
+<li><span class="index">04 / BUSINESS</span><strong>比对当前摘要</strong><p>复用 MatchSHA256，对完整 JWT 计算摘要并与数据库值比较。</p></li>
+<li><span class="index">05 / CONTEXT</span><strong>保存确认后的身份</strong><p>通过 c.Set 保存 int64 类型的管理员 ID。</p></li>
+<li><span class="index">06 / CONTROLLER</span><strong>执行原有业务</strong><p>鉴权成功后调用 c.Next；失败则 AbortWithStatusJSON 并 return。</p></li>
+</ol>
+<p>现有 <code>auth.ParseAdminToken()</code> 已限定签名算法、要求过期时间并检查预期签发方和受众，本方案直接复用它。对应解析选项可参见 <a class="source-ref" href="https://pkg.go.dev/github.com/golang-jwt/jwt/v5#WithValidMethods">golang-jwt/v5 文档 ↗</a>。</p>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>实施方式</th><th>职责</th></tr></thead><tbody>
+<tr><td><code>model/admin.go</code></td><td>追加 FindByID 方法</td><td>读取鉴权需要的数据库字段。</td></tr>
+<tr><td><code>biz/admin.go</code></td><td>追加 Authenticate 方法</td><td>执行令牌校验、记录检查和摘要比对。</td></tr>
+<tr><td><code>middleware/admin_auth.go</code></td><td>新增完整文件</td><td>路由放行、请求头解析、调用业务层、返回错误。</td></tr>
+<tr><td><code>middleware/admin_context.go</code></td><td>新增完整文件</td><td>保存上下文键常量并提供安全的身份读取函数。</td></tr>
+<tr><td><code>main.go</code></td><td>按完整示例合并注册代码</td><td>在注册路由前安装全局鉴权。</td></tr>
+</tbody></table></div>
+<p>实现使用当前的 JWT 配置、<code>token_hash</code> 列、错误类型和响应包装器，不需要新增配置项、数据库列或业务依赖。模型和业务实体的方法仍放在各自已有的文件中。</p>
+</section>
+
+<section id="model" aria-labelledby="model-title"><div class="section-label">03 / MODEL</div><h2 id="model-title">追加按管理员 ID 查询的方法</h2>
+<p>将下面的完整方法追加到 <code>model/admin.go</code>，与 <code>FindByName()</code>、<code>UpdateTokenHash()</code> 同属 <code>model.Admin</code>。所需的 <code>context</code>、<code>errors</code>、<code>db</code>、<code>gorm</code> 导入已存在。</p>
+<details class="code-file" open>
+<summary><span class="file-mode">追加完整方法</span><span class="file-path">model/admin.go</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-model" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-model" data-file="model/admin.go" data-mode="追加完整方法">// FindByID 根据已验证 JWT 中的管理员 ID 查询当前身份和令牌摘要。
+// 只读取鉴权需要的字段,不加载密码摘要;不存在时返回 AdminNotFoundErr。
+func (a *Admin) FindByID(ctx context.Context, id int64) error {
+	if a == nil {
+		return errors.New(&quot;administrator model is nil&quot;)
+	}
+	if ctx == nil {
+		return errors.New(&quot;administrator query context is nil&quot;)
+	}
+	if id &lt;= 0 {
+		return errors.New(&quot;administrator ID must be positive&quot;)
+	}
+	if db.DB == nil {
+		return errors.New(&quot;database is not initialized&quot;)
+	}
+
+	// 使用临时记录,避免接收者原有 ID 参与 GORM 的查询条件。
+	record := &amp;Admin{}
+	err := db.DB.WithContext(ctx).
+		Select(&quot;id&quot;, &quot;name&quot;, &quot;token_hash&quot;).
+		Where(&quot;id = ?&quot;, id).
+		Take(record).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return AdminNotFoundErr
+	}
+	if err != nil {
+		return err
+	}
+
+	*a = *record
+	return nil
+}
+
+</code></pre></details>
+<p>使用新的局部 <code>record</code> 承接结果，避免复用接收者时把旧 ID 隐式带入查询。鉴权不需要密码摘要，因此只查询 <code>id</code>、<code>name</code> 和 <code>token_hash</code>。</p>
+<div class="note"><p>这一节是<strong>追加方法</strong>，不是替换整个文件。请保留已有 Admin 结构体、AdminNotFoundErr 和登录相关查询、更新方法。</p></div>
+</section>
+
+<section id="business" aria-labelledby="business-title"><div class="section-label">04 / BUSINESS</div><h2 id="business-title">追加业务层鉴权方法</h2>
+<p>将下列方法追加到 <code>biz/admin.go</code>。它只处理业务逻辑并返回错误；HTTP 响应交给中间件。当前文件所需导入和 <code>flush()</code> 方法均已存在。</p>
+<details class="code-file" open>
+<summary><span class="file-mode">追加完整方法</span><span class="file-path">biz/admin.go</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-business" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-business" data-file="biz/admin.go" data-mode="追加完整方法">// Authenticate 验证 JWT 及数据库中的当前令牌摘要。
+// 成功时只填充 ID 和 Username;失败时返回错误,不生成 HTTP 响应。
+func (a *Admin) Authenticate(ctx context.Context, rawToken string) error {
+	if a == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New(&quot;nil administrator entity&quot;)}
+	}
+	a.flush()
+
+	if ctx == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New(&quot;nil authentication context&quot;)}
+	}
+	if rawToken == &quot;&quot; {
+		return auth.InvalidTokenErr
+	}
+
+	config := conf.Get()
+	if config == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New(&quot;configuration is not loaded&quot;)}
+	}
+	options := &amp;auth.JWTOptions{
+		Issuer:     config.JWT.Issuer,
+		Audience:   config.JWT.Audience,
+		Lifetime:   config.JWT.Lifetime(),
+		SigningKey: config.JWT.SigningKey(),
+	}
+
+	// 复用已有解析器,先验证签名、算法、标准声明、有效期和管理员 ID。
+	adminID, err := auth.ParseAdminToken(rawToken, options)
+	if err != nil {
+		if errors.Is(err, auth.ExpiredTokenErr) || errors.Is(err, auth.InvalidTokenErr) {
+			return err
+		}
+		return &amp;sys_error.InternalError{Cause: err}
+	}
+
+	// 每次受保护请求都读取当前摘要,以便识别被清空或替换的令牌。
+	record := &amp;model.Admin{}
+	err = record.FindByID(ctx, adminID)
+	if errors.Is(err, model.AdminNotFoundErr) {
+		return auth.InvalidTokenErr
+	}
+	if err != nil {
+		return &amp;sys_error.DatabaseError{Cause: err}
+	}
+	if record.TokenHash == &quot;&quot; {
+		return auth.InvalidTokenErr
+	}
+
+	// MatchSHA256 对原始 JWT 计算摘要,并进行恒定时间比较。
+	matched, err := auth.MatchSHA256(rawToken, record.TokenHash)
+	if err != nil {
+		// 非空摘要格式损坏属于内部数据错误,不能放行请求。
+		return &amp;sys_error.InternalError{Cause: err}
+	}
+	if !matched {
+		return auth.InvalidTokenErr
+	}
+
+	a.ID = record.ID
+	a.Username = record.Name
+	return nil
+}
+
+</code></pre></details>
+<h3>错误类别与身份填充</h3>
+<ul>
+<li>解析器报告令牌过期或无效时，保留原错误，让中间件使用 <code>errors.Is()</code> 分类。</li>
+<li>管理员记录不存在、摘要为空或不匹配，都返回 <code>auth.InvalidTokenErr</code>。</li>
+<li>数据库故障包装为 <code>DatabaseError</code>；配置和非空摘要格式错误包装为 <code>InternalError</code>，保留底层 Cause。</li>
+<li>方法开始时清空旧业务状态，成功后只填充 ID 和 Username。不会把密码摘要或原始令牌填入本次鉴权的业务实体。</li>
+</ul>
+<p>先校验 JWT，再查询数据库。因此一枚已经过期的令牌会先得到 <code>20003</code>；不会再查询其数据库摘要是否也已被清空。若过期同时伴随签名或其他声明错误，则由现有解析器归为无效令牌。</p>
+<p>鉴权读取当前数据库状态，每个通过 JWT 检查的受保护请求执行一次管理员查询。本方案不缓存 token_hash，以便后续请求读取到撤销后的值。</p>
+</section>
+
+<section id="middleware" aria-labelledby="middleware-title"><div class="section-label">05 / MIDDLEWARE</div><h2 id="middleware-title">新增鉴权中间件与身份读取函数</h2>
+<h3>鉴权中间件</h3>
+<p>新增 <code>middleware/admin_auth.go</code>。实例只保存登录路由配置；令牌和管理员业务实体都在每次请求内创建，避免不同请求共享身份状态。</p>
+<details class="code-file" open>
+<summary><span class="file-mode">新增完整文件</span><span class="file-path">middleware/admin_auth.go</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-middleware" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-middleware" data-file="middleware/admin_auth.go" data-mode="新增完整文件">package middleware
+
+import (
+	&quot;SolarNotesAdminAPI/auth&quot;
+	&quot;SolarNotesAdminAPI/biz&quot;
+	&quot;SolarNotesAdminAPI/resp_body&quot;
+	&quot;SolarNotesAdminAPI/sys_error&quot;
+	&quot;errors&quot;
+	&quot;net/http&quot;
+	&quot;strings&quot;
+
+	&quot;github.com/gin-gonic/gin&quot;
+)
+
+// AdminAuth 对登录路由之外的请求执行管理员鉴权。
+// 实例只保存路由配置;每次请求的身份和令牌均使用局部变量。
+type AdminAuth struct {
+	loginFullPath string // loginFullPath 唯一免鉴权登录路由的完整路径。
+}
+
+// NewAdminAuth 创建鉴权中间件;loginFullPath 应由路由前缀与登录路径拼接。
+func NewAdminAuth(loginFullPath string) (*AdminAuth, error) {
+	if loginFullPath == &quot;&quot; || !strings.HasPrefix(loginFullPath, &quot;/&quot;) {
+		return nil, errors.New(&quot;login route must be an absolute route path&quot;)
+	}
+	return &amp;AdminAuth{loginFullPath: loginFullPath}, nil
+}
+
+// Handle 读取 Bearer 令牌,调用业务层鉴权,成功后将管理员 ID 放入本次请求上下文。
+// 登录仅按 POST + 已匹配的完整路由放行;OPTIONS 由前面的 CorsPreflight 终止。
+func (a *AdminAuth) Handle(c *gin.Context) {
+	c.Header(&quot;Cache-Control&quot;, &quot;no-store&quot;)
+	if a == nil {
+		respBody := &amp;resp_body.RespBody{}
+		respBody.InternalError(&amp;sys_error.InternalError{Cause: errors.New(&quot;nil authentication middleware&quot;)})
+		c.AbortWithStatusJSON(http.StatusOK, respBody)
+		return
+	}
+
+	if c.Request.Method == http.MethodPost &amp;&amp; c.FullPath() == a.loginFullPath {
+		c.Next()
+		return
+	}
+
+	rawToken, err := a.bearerToken(c)
+	if err != nil {
+		a.reject(c, err)
+		return
+	}
+
+	administrator := &amp;biz.Admin{}
+	err = administrator.Authenticate(c.Request.Context(), rawToken)
+	if err != nil {
+		a.reject(c, err)
+		return
+	}
+
+	// 只保存确认后的身份 ID,不将密码摘要或原始 JWT 放入 Gin 上下文。
+	c.Set(adminIDContextKey, administrator.ID)
+	c.Next()
+}
+
+// bearerToken 只从唯一的 Authorization 请求头读取 Bearer 令牌。
+// 缺失、重复请求头、方案不匹配或包含多段凭据时均返回 InvalidTokenErr。
+func (a *AdminAuth) bearerToken(c *gin.Context) (string, error) {
+	values := c.Request.Header.Values(&quot;Authorization&quot;)
+	if len(values) != 1 {
+		return &quot;&quot;, auth.InvalidTokenErr
+	}
+	parts := strings.Fields(values[0])
+	if len(parts) != 2 || !strings.EqualFold(parts[0], &quot;Bearer&quot;) {
+		return &quot;&quot;, auth.InvalidTokenErr
+	}
+	return parts[1], nil
+}
+
+// reject 按项目业务码返回鉴权错误,同时停止后续中间件和业务处理器。
+// AbortWithStatusJSON 不会结束当前 Go 函数,调用方仍须立即 return。
+func (a *AdminAuth) reject(c *gin.Context, err error) {
+	respBody := &amp;resp_body.RespBody{}
+	var databaseError *sys_error.DatabaseError
+	switch {
+	case errors.Is(err, auth.ExpiredTokenErr):
+		respBody.TokenExpiredError()
+	case errors.Is(err, auth.InvalidTokenErr):
+		respBody.InvalidToken()
+	case errors.As(err, &amp;databaseError):
+		respBody.DBError(err)
+	default:
+		respBody.InternalError(&amp;sys_error.InternalError{Cause: err})
+	}
+	c.AbortWithStatusJSON(http.StatusOK, respBody)
+}
+</code></pre></details>
+<p><code>bearerToken()</code> 仅接受唯一的 Authorization 头，并用 <code>strings.Fields()</code> 拆为方案名与令牌两段。方案名比较不区分大小写，JWT 内容保留原样；不从 URL 查询参数、Cookie 或请求体中寻找备用令牌。JWT 长度继续由现有解析器限制为最多 4096 字节。</p>
+<p>拒绝请求必须调用 <code>c.AbortWithStatusJSON()</code>，然后从当前方法 <code>return</code>。仅返回 JSON 或仅从当前函数 return 都不足以可靠阻止 Gin 的其余处理器；Abort 停止后续链，return 结束当前函数。<a class="source-ref" href="https://pkg.go.dev/github.com/gin-gonic/gin#Context.AbortWithStatusJSON">Gin Context 文档 ↗</a></p>
+<p>中间件设置 <code>Cache-Control: no-store</code>，覆盖鉴权错误和后续受保护接口的响应。未通过鉴权时，不会写入身份 ID，也不会调用后续业务处理器。</p>
+<h3>读取本次请求的管理员 ID</h3>
+<p>新增 <code>middleware/admin_context.go</code>，将上下文键和读取函数单独保存，避免控制器重复手写键名和直接进行类型断言。</p>
+<details class="code-file" open>
+<summary><span class="file-mode">新增完整文件</span><span class="file-path">middleware/admin_context.go</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-context" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-context" data-file="middleware/admin_context.go" data-mode="新增完整文件">package middleware
+
+import &quot;github.com/gin-gonic/gin&quot;
+
+// adminIDContextKey 用于保存已经通过鉴权的管理员 ID,避免调用方手写键名。
+const adminIDContextKey = &quot;solar_notes.auth.admin_id&quot;
+
+// CurrentAdminID 读取本次请求通过鉴权的管理员 ID。
+// 未经过鉴权、值类型不正确或 ID 无效时返回 false,不触发类型断言 panic。
+func CurrentAdminID(c *gin.Context) (int64, bool) {
+	if c == nil {
+		return 0, false
+	}
+	value, exists := c.Get(adminIDContextKey)
+	if !exists {
+		return 0, false
+	}
+	adminID, ok := value.(int64)
+	if !ok || adminID &lt;= 0 {
+		return 0, false
+	}
+	return adminID, true
+}
+</code></pre></details>
+<p>需要知道当前操作者的控制器调用 <code>middleware.CurrentAdminID(c)</code>，获得 <code>int64</code> 类型的 ID 和 <code>bool</code>。只有 bool 为 true 才继续使用 ID，并通过形参传给相应业务方法；如果受保护接口意外拿不到身份，应按内部错误结束处理。</p>
+<p><code>c.Set()</code> 保存的是 Gin 请求上下文数据，不会自动添加到 <code>c.Request.Context()</code>。业务层的 context 仍用于取消与超时；身份 ID 应显式传入，不能用请求体中由调用者提供的管理员 ID 代替。</p>
+<p>若接口需要把雪花 ID 返回为 JSON，继续使用 <code>strconv.FormatInt(adminID, 10)</code> 转为字符串。仅查询天体状态的控制器不需要额外读取 ID，也会被全局鉴权保护。</p>
+</section>
+
+<section id="registration" aria-labelledby="registration-title"><div class="section-label">06 / REGISTRATION</div><h2 id="registration-title">在所有路由注册之前安装鉴权</h2>
+<p>下面的 <code>main.go</code> 示例基于当前工程。登录限流和鉴权例外使用同一个 <code>loginFullPath</code>，它由 <code>v1Prefix + loginPath</code> 生成。</p>
+<div class="flow"><div class="flow-step"><strong>01 · CorsHeaders</strong><span>先写入跨域响应头。</span></div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-step"><strong>02 · LoginRouteLimit</strong><span>仅对 POST 登录路由计数。</span></div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-step"><strong>03 · RequestBodyLimit</strong><span>检查全局请求体大小。</span></div></div>
+<div class="flow"><div class="flow-step"><strong>04 · CorsPreflight</strong><span>OPTIONS 在此结束。</span></div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-step"><strong>05 · AdminAuth</strong><span>登录放行，其他请求验证身份。</span></div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-step"><strong>06 · Controller</strong><span>执行请求对应的业务逻辑。</span></div></div>
+<details class="code-file" open>
+<summary><span class="file-mode">替换完整文件</span><span class="file-path">main.go</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-main" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-main" data-file="main.go" data-mode="替换完整文件">package main
+
+import (
+	&quot;SolarNotesAdminAPI/conf&quot;
+	&quot;SolarNotesAdminAPI/controller/v1/admin&quot;
+	&quot;SolarNotesAdminAPI/controller/v1/planet&quot;
+	&quot;SolarNotesAdminAPI/db&quot;
+	&quot;SolarNotesAdminAPI/middleware&quot;
+	&quot;SolarNotesAdminAPI/snowflake&quot;
+	&quot;SolarNotesAdminAPI/validation&quot;
+	&quot;errors&quot;
+	&quot;log&quot;
+	&quot;net/http&quot;
+
+	&quot;github.com/gin-gonic/gin&quot;
+)
+
+func main() {
+	err := conf.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+	configInstance := conf.Get()
+
+	err = validation.Register()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = db.Connect(configInstance.Database)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = snowflake.InitSnowflake(configInstance.Snowflake.NodeID)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	router := gin.Default()
+	// Tips: 配置可信任代理 IP 或 CIDR 列表,以便在使用 X-Forwarded-For 等头部时正确获取客户端真实 IP 地址
+	// 否则获取到的客户端 IP 地址为前置代理的地址,从而导致登录接口访问频率限制失效
+	err = router.SetTrustedProxies(configInstance.Service.TrustedProxies)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 为登录路由提供唯一的路径来源,避免限流匹配和注册路径不一致
+	v1Prefix := &quot;/v1&quot;
+	loginPath := &quot;/admin/login&quot;
+	loginFullPath := v1Prefix + loginPath
+	loginLimiter := middleware.NewLoginRouteLimit(loginFullPath)
+	adminAuth, err := middleware.NewAdminAuth(loginFullPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	bodyLimit, err := middleware.NewRequestBodyLimit(configInstance.Service.MaxRequestBodyBytes)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 先处理跨域头、登录限流和请求体限制;预检结束后再鉴权。
+	// 必须在创建路由组、注册任何业务路由之前安装全局鉴权。
+	router.Use(
+		middleware.CorsHeaders,
+		loginLimiter.Handle,
+		bodyLimit.Handle,
+		middleware.CorsPreflight,
+		adminAuth.Handle,
+	)
+
+	v1 := router.Group(v1Prefix)
+	{
+		v1.POST(loginPath, admin.Login)
+		v1.GET(&quot;/planet/status&quot;, planet.ShowStatus)
+	}
+
+	server := &amp;http.Server{
+		// 开发环境沿用当前监听地址。
+		Addr: &quot;0.0.0.0:&quot; + configInstance.Service.Port,
+		// TODO: 使用同机 Nginx 部署时,将上一行改为:
+		// Addr: &quot;127.0.0.1:&quot; + configInstance.Service.Port,
+		Handler:           router,
+		ReadHeaderTimeout: configInstance.Service.ReadHeaderTimeout(), // 读取完整请求头的最长时间
+		ReadTimeout:       configInstance.Service.ReadTimeout(),       // 读取整个请求(包括请求头和请求体)的最长时间
+		IdleTimeout:       configInstance.Service.IdleTimeout(),       // 已完成请求的连接,在等待下一个请求时的最长空闲时间
+	}
+
+	err = server.ListenAndServe()
+	if err != nil &amp;&amp; !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
+	}
+}
+</code></pre></details>
+<div class="note"><p><strong>router.Use 必须早于路由组创建和路由注册。</strong> Gin 会把当时的中间件链合并到路由；不要先注册接口，再补装鉴权。后续在这之后新增的 /v1、/v2 等路由都会默认受到保护。</p></div>
+<p>这里使用全局中间件，因此不需要在 <code>v1.GET("/planet/status", ...)</code> 上再单独添加一次鉴权，也不需要给每个新 API 重复注册。全局登录限流保持原位置，不要在登录路由上重复挂载。</p>
+<p>这个顺序保留原有响应优先级：登录限流和请求体错误可能先于鉴权返回；请求体超限不会进入鉴权或业务处理器。未匹配的路径也可能先得到鉴权错误；身份有效后，才继续由 Gin 处理未匹配路由。Gin 自身的路由重定向不执行目标业务处理器，客户端随后访问目标路由时仍需通过鉴权。</p>
+</section>
+
+<section id="revocation" aria-labelledby="revocation-title"><div class="section-label">07 / TOKEN STATE</div><h2 id="revocation-title">退出、改密和重新登录如何影响令牌</h2>
+<div class="table-wrap"><table><thead><tr><th>数据库当前状态</th><th>持有旧 JWT 的请求</th><th>原因</th></tr></thead><tbody>
+<tr><td>token_hash 仍为该 JWT 的摘要</td><td>JWT 也有效时允许继续。</td><td>签名、时效和数据库摘要均通过。</td></tr>
+<tr><td>退出后 token_hash 被清空</td><td>有效期内也返回 20004。</td><td>数据库已不再允许使用该令牌。</td></tr>
+<tr><td>重新登录后写入新 JWT 的摘要</td><td>旧 JWT 返回 20004，新 JWT 可以通过。</td><td>一个账号只保存一个当前摘要。</td></tr>
+<tr><td>改密时同步清空 token_hash</td><td>旧 JWT 返回 20004。</td><td>改密业务撤销了原登录状态。</td></tr>
+<tr><td>管理员记录被删除</td><td>返回 20004。</td><td>已不存在可验证的管理员身份。</td></tr>
+</tbody></table></div>
+<p>鉴权中间件只读取状态。后续退出接口需要提交清空 <code>token_hash</code> 的更新；改密处理应在同一条 UPDATE 或同一事务中更新密码摘要并清空令牌摘要。仅修改密码字段，不会自动撤销一个尚未过期且摘要仍匹配的 JWT。</p>
+<p>现有登录业务每次成功登录都会覆盖摘要，因此这套实现对应<strong>同一账号只保留一枚当前令牌</strong>。同一枚令牌被复制到多个客户端时，清空摘要会使它们随后执行的鉴权均失败。</p>
+<div class="note warning"><p><strong>撤销针对后续读取到新状态的鉴权检查。</strong> 已经通过鉴权、正在执行业务的请求不会因摘要后来被清空而自动停止或回滚。需要严格协调并发登录、改密或退出的业务操作时，应在这些业务方法中使用相应的事务和条件更新；中间件本身不提供跨请求的事务锁。</p></div>
+<p>JWT 的 exp 仍由后端解析器检查，数据库的 token_hash 用于确认当前登录状态。两项检查各自承担职责，不需要为本方案新增 token 明文列或过期时间列。</p>
+</section>
+
+<section id="verification" aria-labelledby="verification-title"><div class="section-label">08 / VERIFICATION</div><h2 id="verification-title">实施顺序与已验证场景</h2>
+<ol><li>在 model/admin.go 追加 FindByID。</li><li>在 biz/admin.go 追加 Authenticate。</li><li>新增两个 middleware 文件。</li><li>按 main.go 示例，在路由组创建之前安装全局鉴权。</li><li>格式化并检查编译；启动后验证未鉴权、有效令牌和预检请求。</li></ol>
+<details class="code-file" open>
+<summary><span class="file-mode">合并后执行</span><span class="file-path">工程根目录</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-commands" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-commands" data-file="工程根目录" data-mode="合并后执行">gofmt -w model/admin.go biz/admin.go middleware/admin_auth.go middleware/admin_context.go main.go
+go test ./...
+go vet ./...
+</code></pre></details>
+<h3>隔离验证结果</h3>
+<div class="table-wrap"><table><thead><tr><th>验证范围</th><th>覆盖内容</th><th>结果</th></tr></thead><tbody>
+<tr><td>26 个 JWT / 请求头场景</td><td>缺失、格式错误、重复头、超长、正确令牌、方案名大小写、错误签名 / 算法 / iss / aud / sub、缺少声明、过期以及复合错误。</td><td class="status-pass">通过</td></tr>
+<tr><td>7 个数据库状态场景</td><td>摘要匹配、清空、不匹配、损坏、管理员删除、数据库关闭和未初始化。</td><td class="status-pass">通过</td></tr>
+<tr><td>令牌替换与撤销</td><td>同一中间件实例中，新摘要使旧令牌失效；清空摘要后两枚令牌都被拒绝。</td><td class="status-pass">通过</td></tr>
+<tr><td>路由保护与中间件顺序</td><td>实际 main.go 注册代码；登录不要求令牌；新 /v2 路由默认受保护；相似登录路径不放行；预检、请求体限制和登录限流按既定顺序工作。</td><td class="status-pass">通过</td></tr>
+<tr><td>真实天体状态处理器</td><td>使用当前 planet.ShowStatus 控制器，在鉴权通过后返回九条正确状态。</td><td class="status-pass">通过</td></tr>
+<tr><td>请求身份与模型字段</td><td>大于 2⁵³ 的 ID 保持精度；失败清空旧身份；模型复用不带入旧主键，也不加载密码摘要。</td><td class="status-pass">通过</td></tr>
+<tr><td>并发与静态检查</td><td>40 个有效 / 无效请求混合执行；竞态检查、编译及 go test 的全部 vet 检查器。</td><td class="status-pass">通过</td></tr>
+</tbody></table></div>
+<p class="small">上述测试在临时副本中使用专用测试密钥和 SQLite 内存数据库执行；没有读取真实 JWT 密钥，也没有向本机 MySQL 写入数据。SQLite 只作为临时测试依赖，未加入实际工程。测试验证鉴权逻辑及路由链，MySQL 特有的排序规则和生产部署链路需在对应环境验证。</p>
+<p class="small">临时测试文件没有写入实际工程。因此在尚未加入这些测试用例时，单独运行工程内的 go test ./... 主要完成编译检查，不能代替表中列出的功能验收。</p>
+<h3>本机只读验收示例</h3>
+<p>以下使用开发端口 4060；若配置已更改，请替换端口。应用方案并重启服务后，未携带令牌应返回 HTTP 200、业务码 20004。</p>
+<details class="code-file" open>
+<summary><span class="file-mode">只读验收</span><span class="file-path">未携带令牌</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-missing" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-missing" data-file="未携带令牌" data-mode="只读验收">curl --include --silent --show-error \
+  &#x27;http://127.0.0.1:4060/v1/planet/status&#x27;
+</code></pre></details>
+<p>把占位文字替换为登录接口返回、且仍对应数据库当前摘要的完整 JWT。请求应进入原天体状态接口。</p>
+<details class="code-file" open>
+<summary><span class="file-mode">只读验收</span><span class="file-path">携带当前有效令牌</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-valid" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-valid" data-file="携带当前有效令牌" data-mode="只读验收">curl --include --silent --show-error \
+  -H &#x27;Authorization: Bearer &lt;替换为登录接口返回的完整JWT&gt;&#x27; \
+  &#x27;http://127.0.0.1:4060/v1/planet/status&#x27;
+</code></pre></details>
+<p>OPTIONS 预检应返回 204，不需要 Authorization，也不应进入业务处理器。</p>
+<details class="code-file" open>
+<summary><span class="file-mode">只读验收</span><span class="file-path">跨域预检</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-options" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-options" data-file="跨域预检" data-mode="只读验收">curl --include --silent --show-error -X OPTIONS \
+  -H &#x27;Origin: http://localhost:5062&#x27; \
+  -H &#x27;Access-Control-Request-Method: GET&#x27; \
+  -H &#x27;Access-Control-Request-Headers: Authorization&#x27; \
+  &#x27;http://127.0.0.1:4060/v1/planet/status&#x27;
+</code></pre></details>
+<div class="note"><p>本文是实现文档。代码已在临时副本验证；实际工程仅新增这份 HTML，源码与数据库由你阅读后按方案实施。</p></div>
+</section>
+<footer>SolarNotesAdminAPI · 管理员鉴权中间件实现文档 · 2026-11-15 · 单文件 HTML，无外部脚本、字体或图片依赖。</footer>
+</main></div><script>
+"use strict";
+(() => {
+  const files = [...document.querySelectorAll("details.code-file")];
+  const expand = document.getElementById("expand-all");
+  const collapse = document.getElementById("collapse-all");
+  expand.hidden = false;
+  collapse.hidden = false;
+  expand.addEventListener("click", () => files.forEach(file => { file.open = true; }));
+  collapse.addEventListener("click", () => files.forEach(file => { file.open = false; }));
+
+  async function copyText(value) {
+    if (navigator.clipboard && window.isSecureContext) {
+      try { await navigator.clipboard.writeText(value); return true; } catch (_) { /* 尝试备用方式 */ }
+    }
+    const field = document.createElement("textarea");
+    field.value = value;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.left = "-9999px";
+    document.body.append(field);
+    field.select();
+    let copied = false;
+    try { copied = document.execCommand("copy"); } catch (_) { copied = false; }
+    field.remove();
+    return copied;
+  }
+
+  document.querySelectorAll("[data-copy]").forEach(button => {
+    const code = document.getElementById(button.dataset.copy);
+    const feedback = button.nextElementSibling;
+    if (!code) return;
+    button.hidden = false;
+    button.addEventListener("click", async () => {
+      const ok = await copyText(code.textContent);
+      feedback.textContent = ok ? "已复制" : "复制失败，请手动选择代码";
+      window.setTimeout(() => { feedback.textContent = ""; }, 2500);
+    });
+  });
+})();
+</script></body></html>
