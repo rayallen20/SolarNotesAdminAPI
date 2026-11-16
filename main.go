@@ -118,6 +118,7 @@ func newRouter(serviceConf conf.Service) (*gin.Engine, error) {
 		v1.POST(loginPath, admin.Login)
 		v1.GET("/planet/status", planet.ShowStatus)
 		v1.POST("/planet/create", planet.Create)
+		v1.GET("/planet/list", planet.List)
 	}
 
 	return router, nil

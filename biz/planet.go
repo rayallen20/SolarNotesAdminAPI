@@ -166,3 +166,66 @@ func (p *Planet) flush(ctx context.Context) {
 	p.Intro = ""
 	p.Exist = false
 }
+
+// List 本方法用于查询已创建的天体列表,将模型记录转换为业务实体
+// 已知天体按 names 顺序排列;其他名称保留在末尾,沿用模型的 ID 升序
+// 空表返回空切片,不补充尚未创建的天体
+func (p *Planet) List(ctx context.Context) ([]*Planet, error) {
+	if p == nil {
+		return nil, &sys_error.InternalError{
+			Cause: errors.New("nil planet entity"),
+		}
+	}
+
+	if ctx == nil {
+		return nil, &sys_error.InternalError{
+			Cause: errors.New("nil context"),
+		}
+	}
+
+	orm := &model.Planet{}
+	records, err := orm.FindAll(ctx)
+	if err != nil {
+		return nil, &sys_error.DatabaseError{Cause: err}
+	}
+
+	recordsByName := make(map[string]*model.Planet, len(records))
+	for _, record := range records {
+		if record == nil {
+			return nil, &sys_error.InternalError{
+				Cause: errors.New("nil planet record"),
+			}
+		}
+		recordsByName[record.Name] = record
+	}
+
+	// 使用同一份 names 作为展示顺序来源,跳过尚未创建的天体
+	orderedRecords := make([]*model.Planet, 0, len(records))
+	for _, name := range names {
+		record, exists := recordsByName[name]
+		if !exists {
+			continue
+		}
+		orderedRecords = append(orderedRecords, record)
+		delete(recordsByName, name)
+	}
+
+	// 保留其他入口可能写入的未知名称,按原查询顺序放到末尾
+	// 遍历 records 而非 map,确保这些记录也有确定顺序
+	for _, record := range records {
+		if _, exists := recordsByName[record.Name]; exists {
+			orderedRecords = append(orderedRecords, record)
+		}
+	}
+
+	planets := make([]*Planet, 0, len(orderedRecords))
+	for _, record := range orderedRecords {
+		// 每条记录使用独立实体,避免列表元素共享同一个指针
+		planetBiz := &Planet{}
+		planetBiz.fillByORM(ctx, record)
+		planetBiz.Exist = true
+		planets = append(planets, planetBiz)
+	}
+
+	return planets, nil
+}

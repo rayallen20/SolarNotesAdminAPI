@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="SolarNotesAdminAPI 天体列表展示 API 实现文档：模型查询、业务列表、响应 DTO、全局鉴权、ID 字符串与空数组响应。">
+<title>天体列表 API · 实现文档 · Solar Notes</title><style>
+:root{color-scheme:light;--paper:#f3f6f2;--ink:#1d302a;--muted:#5e7068;--line:#dce5dc;--green:#21644c;--soft:#e7f1e8;--amber:#846013;--warm:#fbf2db;--blue:#275e7a;--mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:24px}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.82 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+a{color:var(--green);text-underline-offset:4px;overflow-wrap:anywhere}a:hover{color:#103d2b}:focus-visible{outline:3px solid #4485ae;outline-offset:3px}[hidden]{display:none!important}
+.skip{position:absolute;top:-80px;left:20px;background:white;padding:10px 16px;z-index:4}.skip:focus{top:12px}
+.page{width:min(1350px,100%);margin:auto;display:grid;grid-template-columns:228px minmax(0,1fr);gap:54px;padding:40px 38px 80px}.sidebar{position:sticky;top:28px;align-self:start;max-height:calc(100vh - 56px);overflow:auto}
+.brand{font-size:12px;font-weight:800;letter-spacing:.1em;color:var(--green)}.brand::before{content:"";display:inline-block;width:12px;height:12px;border:3px solid var(--green);border-radius:50%;margin-right:8px;vertical-align:-1px}.sidebar p{font-size:13px;color:var(--muted);line-height:1.7}.sidebar nav{display:grid;gap:3px;margin-top:22px}.sidebar nav a{display:flex;gap:12px;padding:7px 9px;border-radius:7px;text-decoration:none;color:var(--muted);font-size:14px}.sidebar nav a:hover{background:var(--soft);color:var(--green)}.sidebar nav span{color:var(--green);font:12px/2 var(--mono)}.side-note{border-top:1px solid var(--line);padding-top:16px;margin-top:22px}
+main{min-width:0}.eyebrow,.section-label{color:var(--green);font:700 12px/1.5 var(--mono);letter-spacing:.1em}.hero h1{font-size:clamp(33px,4vw,48px);line-height:1.25;letter-spacing:-.03em;margin:16px 0}.lede{font-size:18px;color:var(--muted);max-width:820px}.tags{display:flex;flex-wrap:wrap;gap:8px;margin:24px 0}.tag{border:1px solid var(--line);border-radius:30px;padding:4px 11px;font-size:12px;background:white;color:var(--muted)}
+.thesis{background:#194b39;color:#fff;border-radius:14px;padding:22px 25px}.thesis p{margin:0}.thesis strong{color:#d4f5dc}.page-tools{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:20px 0}.page-tools button,.code-toolbar button{font:inherit;font-size:13px;border:1px solid var(--green);border-radius:7px;background:white;color:var(--green);cursor:pointer;padding:6px 12px}.page-tools button:hover,.code-toolbar button:hover{background:var(--soft)}
+section{padding-top:42px;margin-top:10px}h2{font-size:27px;line-height:1.4;letter-spacing:-.02em;margin:8px 0 20px}h3{font-size:19px;line-height:1.55;margin:27px 0 10px}p{margin:12px 0}code{font:.87em/1.7 var(--mono);background:#e8f0e8;border-radius:4px;padding:2px 5px;overflow-wrap:anywhere}pre{margin:14px 0;padding:19px 22px;background:#1d3029;color:#e5efe6;border-radius:10px;overflow-x:auto;tab-size:2;font:13px/1.75 var(--mono)}pre code{font:inherit;background:transparent;color:inherit;padding:0;border-radius:0;overflow-wrap:normal}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:18px 0}.card{border:1px solid var(--line);background:#fffefa;border-radius:12px;padding:18px 19px}.card .n{color:var(--green);font:12px/1.5 var(--mono)}.card h3{margin:6px 0;font-size:16px}.card p{font-size:14px;color:var(--muted);margin:0}
+.note{background:var(--soft);border-left:3px solid var(--green);border-radius:0 8px 8px 0;padding:15px 18px;margin:20px 0;font-size:14px}.note.warning{background:var(--warm);border-color:var(--amber)}.note p{margin:0}.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:white;margin:18px 0}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;vertical-align:top;padding:12px 15px;border-bottom:1px solid var(--line);min-width:105px}th{color:var(--green);background:#edf3ec;font-weight:650}tr:last-child td{border-bottom:0}ul,ol{padding-left:23px}li{margin:8px 0}.small{font-size:13px;color:var(--muted)}
+details.code-file{border:1px solid var(--line);background:#fffefa;border-radius:10px;overflow:hidden;margin:18px 0}details.code-file summary{padding:14px 17px;cursor:pointer;font-weight:650;overflow-wrap:anywhere;line-height:1.7}.file-mode{display:inline-block;font-size:11px;padding:2px 7px;border-radius:5px;background:var(--soft);color:var(--green);margin-right:9px;font-weight:500}.file-path{font:13px/1.7 var(--mono)}.code-toolbar{display:flex;align-items:center;gap:10px;padding:9px 16px;border-top:1px solid var(--line)}.copy-feedback{font-size:12px;color:var(--muted)}.code-file pre{margin:0;border-radius:0;font-size:12.5px}footer{margin-top:45px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+@media(max-width:1050px){.page{gap:27px;padding-left:24px;padding-right:24px;grid-template-columns:185px minmax(0,1fr)}}@media(max-width:800px){.page{display:block;padding:24px 20px 55px}.sidebar{position:static;max-height:none;margin-bottom:32px}.sidebar nav{display:flex;gap:5px;overflow-x:auto;margin-top:15px;padding-bottom:8px}.sidebar nav a{white-space:nowrap;border:1px solid var(--line);padding:5px 9px}.sidebar p,.side-note{display:none}.grid{grid-template-columns:1fr}h2{font-size:24px}}
+@media(max-width:520px){pre{padding:16px;font-size:12px}th,td{padding:10px 12px}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}@media print{body{background:white;color:black;font-size:11pt}.page{display:block;width:100%;padding:0}.sidebar,.page-tools,.code-toolbar,.skip{display:none!important}.thesis{background:#eee;color:black}.thesis strong{color:black}section{padding-top:20px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f3f3;color:black;font-size:8pt}.code-file{overflow:visible!important}.table-wrap{overflow:visible}a{color:black}}
+
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:10px;margin:24px 0}.flow-step{flex:1 1 175px;border:1px solid var(--line);border-radius:10px;background:#fffefa;padding:13px 16px;font-size:14px}.flow-step strong{display:block;color:var(--green);font-size:15px}.flow-step span{color:var(--muted)}.flow-arrow{display:flex;align-items:center;color:var(--green);font-size:18px}.lead-code{font:13px/1.7 var(--mono);color:var(--green)}@media(max-width:800px){.flow-arrow{display:none}.flow-step{flex-basis:100%}}
+
+.endpoint{display:inline-flex;align-items:center;gap:10px;margin:5px 0 13px;color:var(--green);font:14px/1.6 var(--mono)}.endpoint b{font-size:11px;letter-spacing:.05em;background:var(--soft);padding:3px 8px;border-radius:5px}.status-pass{color:var(--green);font-weight:650}.change-list strong{color:var(--green)}.table-wrap caption{text-align:left;padding:12px 15px;background:#fffefa;font-weight:650}.inline-path{font-family:var(--mono);font-size:.9em}main section{scroll-margin-top:20px}.flow-step code{font-size:12px}
+
+.pipeline{list-style:none;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:22px 0}.pipeline li{margin:0;border:1px solid var(--line);background:#fffefa;border-radius:10px;padding:16px}.pipeline .index{display:block;font:12px/1.5 var(--mono);color:var(--green);margin-bottom:5px}.pipeline strong{display:block;font-size:15px}.pipeline p{font-size:13px;color:var(--muted);margin:5px 0 0}.source-ref{font-size:12px;white-space:normal}.rule-line{border-top:1px solid var(--line);padding-top:16px;margin-top:22px}.endpoint span{overflow-wrap:anywhere}@media(max-width:800px){.pipeline{grid-template-columns:1fr}.pipeline li{padding:13px 15px}}
+</style></head><body>
+<a class="skip" href="#content">跳到正文</a><div class="page"><aside class="sidebar" aria-label="文档导航"><div class="brand">SOLAR NOTES / DOCS</div>
+<p>读取已创建天体，返回可供管理页面展示的列表。</p><nav aria-label="目录"><a href="#contract"><span>01</span>接口约定</a><a href="#structure"><span>02</span>分层与文件</a><a href="#model"><span>03</span>模型查询</a><a href="#business"><span>04</span>业务列表</a><a href="#dto"><span>05</span>响应 DTO</a><a href="#controller"><span>06</span>控制器</a><a href="#route"><span>07</span>路由与调用</a><a href="#verification"><span>08</span>实施与验证</a></nav>
+<p class="side-note">2026-11-16 · 后端实现文档<br>独立 HTML · 可复制代码<br><a href="planet-create-api-implementation.html">创建天体 API ↗</a></p></aside>
+<main id="content"><header class="hero"><div class="eyebrow">PLANET LIST / IMPLEMENTATION</div><h1>天体列表展示 API<br>实现文档</h1>
+<p class="lede">沿用当前 Controller、Biz、Model 与响应 DTO 分层，返回已创建天体的 ID、名称、标题和简介。</p>
+<div class="tags"><span class="tag">GET /v1/planet/list</span><span class="tag">全局鉴权</span><span class="tag">按 names 顺序</span><span class="tag">空列表 []</span><span class="tag">文档方案 · 手动实施</span></div>
+<div class="thesis"><p><strong>列表内容来自数据库中的实际记录。</strong> 模型读取实际记录，业务层按 names 顺序返回实体切片，控制器将 ID 转为字符串并组装 data.planets。</p></div>
+<div class="page-tools"><button type="button" id="expand-all" hidden>展开全部代码</button><button type="button" id="collapse-all" hidden>折叠全部代码</button><span class="small">追加三个方法 / 函数 · 两个 DTO 文件 · 一条路由</span></div>
+<noscript><p class="small">未启用 JavaScript 时，仍可展开代码并手动复制。</p></noscript></header>
+<section id="contract" aria-labelledby="contract-title"><div class="section-label">01 / IMPLEMENTATION</div><h2 id="contract-title">接口约定与返回内容</h2>
+<div class="endpoint"><b>GET</b><span>/v1/planet/list</span></div>
+<p>读取 <code>planet</code> 表中实际存在的全部记录，每条返回 <code>id</code>、<code>name</code>、<code>title</code> 和 <code>intro</code>。请求无需请求体，也没有必填查询参数；沿用 <code>Authorization: Bearer &lt;完整 JWT&gt;</code> 鉴权。</p>
+<p>列表按照 <code>biz/planet.go</code> 中已有 <code>names</code> 的标识顺序展示，即从太阳开始，再按行星距太阳由近到远排列：</p>
+<p class="note"><code>Sun → Mercury → Venus → Earth → Mars → Jupiter → Saturn → Uranus → Neptune</code></p>
+<p>业务层直接遍历已有 names，确保它是排序规则的唯一代码来源。只追加已经创建的记录；例如数据库只有 Earth、Sun、Neptune，列表返回 Sun、Earth、Neptune，不补充缺失天体。记录的 ID 或插入先后不改变上述顺序。</p>
+<p>当前创建 API 仅允许太阳和八大行星九种名称，且名称有唯一约束，因此正常业务数据量很小，本方案返回完整列表。查询不设置 LIMIT 9，也不按固定名称集合过滤；如果数据库存在 names 未定义的名称，同样保留，但放在已知天体之后，并按 ID 升序排列。将来扩展为大量天体时，可再增加分页契约。</p>
+<details class="code-file">
+<summary><span class="file-mode">JSON 示例</span><span class="file-path">存在两条记录 · HTTP 200</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-success" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-success" data-file="存在两条记录 · HTTP 200" data-mode="JSON 示例">{
+  &quot;code&quot;: 200,
+  &quot;message&quot;: &quot;success&quot;,
+  &quot;data&quot;: {
+    &quot;planets&quot;: [
+      {
+        &quot;id&quot;: &quot;2119659239906480000&quot;,
+        &quot;name&quot;: &quot;Sun&quot;,
+        &quot;title&quot;: &quot;太阳系的中心恒星&quot;,
+        &quot;intro&quot;: &quot;太阳为太阳系提供光和热。&quot;
+      },
+      {
+        &quot;id&quot;: &quot;2119659239906480128&quot;,
+        &quot;name&quot;: &quot;Earth&quot;,
+        &quot;title&quot;: &quot;我们的蓝色星球&quot;,
+        &quot;intro&quot;: &quot;地球是太阳系中目前已知存在生命的行星。&quot;
+      }
+    ]
+  }
+}</code></pre></details>
+<div class="table-wrap"><table><thead><tr><th>字段</th><th>JSON 类型</th><th>含义</th></tr></thead><tbody>
+<tr><td>data.planets</td><td>Array</td><td>已创建的天体列表，每个元素为对象。</td></tr>
+<tr><td>id</td><td>String</td><td>数据库 BIGINT / Go int64 转为十进制字符串，避免前端整数精度丢失。</td></tr>
+<tr><td>name</td><td>String</td><td>用于匹配前端资源的规范标识，例如 Earth。</td></tr>
+<tr><td>title</td><td>String</td><td>简介标题，按数据库存储值返回。</td></tr>
+<tr><td>intro</td><td>String</td><td>简介内容，按数据库存储值返回。</td></tr>
+</tbody></table></div>
+<h3>没有记录也是成功结果</h3>
+<details class="code-file">
+<summary><span class="file-mode">JSON 示例</span><span class="file-path">空表 · HTTP 200</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-empty" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-empty" data-file="空表 · HTTP 200" data-mode="JSON 示例">{
+  &quot;code&quot;: 200,
+  &quot;message&quot;: &quot;success&quot;,
+  &quot;data&quot;: {
+    &quot;planets&quot;: []
+  }
+}</code></pre></details>
+<p>空表返回 <code>data.planets: []</code>，保持字段稳定。数据库故障应返回错误业务码，不能被转换为“查询成功但列表为空”。</p>
+<div class="table-wrap"><table><thead><tr><th>结果</th><th>HTTP 状态</th><th>JSON code</th><th>data</th></tr></thead><tbody>
+<tr><td>查询成功，包括空表</td><td>200</td><td>200</td><td>{"planets": [...]}</td></tr>
+<tr><td>数据库查询失败</td><td>200</td><td>10201</td><td>{}</td></tr>
+<tr><td>内部调用状态异常</td><td>200</td><td>500</td><td>{}</td></tr>
+<tr><td>缺失、无效或已撤销令牌</td><td>200</td><td>20004</td><td>{}</td></tr>
+<tr><td>令牌仅因过期而无效</td><td>200</td><td>20003</td><td>{}</td></tr>
+</tbody></table></div>
+<details class="code-file">
+<summary><span class="file-mode">JSON 示例</span><span class="file-path">数据库查询失败 · HTTP 200</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-error" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-error" data-file="数据库查询失败 · HTTP 200" data-mode="JSON 示例">{
+  &quot;code&quot;: 10201,
+  &quot;message&quot;: &quot;数据库操作失败,请稍后重试&quot;,
+  &quot;data&quot;: {}
+}</code></pre></details></section><section id="structure" aria-labelledby="structure-title"><div class="section-label">02 / IMPLEMENTATION</div><h2 id="structure-title">文件分工与现有接口的关系</h2>
+<ol class="pipeline">
+<li><span class="index">01 / MIDDLEWARE</span><strong>校验管理员身份</strong><p>复用全局鉴权和请求体上限，只有通过鉴权才进入控制器。</p></li>
+<li><span class="index">02 / MODEL</span><strong>查询实际记录</strong><p>选择四个字段，以稳定顺序读取，空表得到空切片。</p></li>
+<li><span class="index">03 / BUSINESS</span><strong>转换为业务实体</strong><p>按照已有 names 排列，包装数据库错误，每条记录对应独立实体。</p></li>
+<li><span class="index">04 / CONTROLLER</span><strong>组装响应 DTO</strong><p>ID 转为字符串，明确初始化列表，再交给统一包装器。</p></li>
+</ol>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>实施方式</th></tr></thead><tbody>
+<tr><td>model/planet.go</td><td>追加成员方法 FindAll(ctx)。</td></tr>
+<tr><td>biz/planet.go</td><td>追加成员方法 List(ctx)。</td></tr>
+<tr><td>param/resp/v1/planet/list.go</td><td>新增 ListResp。</td></tr>
+<tr><td>param/resp/v1/planet/list_planet.go</td><td>新增 ListPlanetResp，每个文件一个结构体。</td></tr>
+<tr><td>controller/v1/planet/planet.go</td><td>新增 strconv 导入，追加 List(c)。</td></tr>
+<tr><td>main.go</td><td>在 newRouter 的 v1 路由组追加 GET /planet/list。</td></tr>
+</tbody></table></div>
+<p>无需新增请求 DTO、数据库列、配置项、业务错误类型或依赖。现有 <code>RespBody.Success(map[string]any)</code> 可以直接包装列表。</p>
+<div class="table-wrap"><table><thead><tr><th>接口</th><th>用途</th><th>成功时返回</th></tr></thead><tbody>
+<tr><td>GET /v1/planet/status</td><td>为创建表单判断九种名称是否已创建。</td><td>九项 name / exist 状态。</td></tr>
+<tr><td>POST /v1/planet/create</td><td>创建天体。</td><td>按你的最新约定返回 data: {}。</td></tr>
+<tr><td>GET /v1/planet/list</td><td>展示数据库中已经创建的天体。</td><td>data.planets 列表，元素为完整的四字段信息。</td></tr>
+</tbody></table></div>
+<div class="note"><p>以下示例以<strong>追加方法</strong>为主。保留已有 ShowStatus、Create、FindByName、FindByNames、Insert 及其错误定义；创建成功的空对象响应沿用当前实现。</p></div>
+</section><section id="model" aria-labelledby="model-title"><div class="section-label">03 / IMPLEMENTATION</div><h2 id="model-title">追加 model.Planet.FindAll()</h2>
+<p>将下面方法追加到 <code>model/planet.go</code>。所需的 db、context 和 errors 导入均已存在。</p>
+<details class="code-file" open>
+<summary><span class="file-mode">追加完整方法</span><span class="file-path">model/planet.go</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-model" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-model" data-file="model/planet.go" data-mode="追加完整方法">// FindAll 本方法用于查询已创建的全部天体,按 ID 升序提供稳定的读取顺序
+// 天体的展示顺序由业务层根据 names 决定
+// 使用独立切片承接结果,不将接收者中已有的 ID 或名称作为查询条件
+func (p *Planet) FindAll(ctx context.Context) ([]*Planet, error) {
+	if p == nil {
+		return nil, errors.New(&quot;nil planet model&quot;)
+	}
+	if ctx == nil {
+		return nil, errors.New(&quot;nil planet query context&quot;)
+	}
+	if db.DB == nil {
+		return nil, errors.New(&quot;database is not initialized&quot;)
+	}
+
+	planets := make([]*Planet, 0)
+	err := db.DB.WithContext(ctx).
+		Select(&quot;id&quot;, &quot;name&quot;, &quot;title&quot;, &quot;intro&quot;).
+		Order(&quot;id ASC&quot;).
+		Find(&amp;planets).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return planets, nil
+}
+</code></pre></details>
+<p>查询只读取响应需要的四列。模型使用固定的 <code>id ASC</code> 提供稳定读取顺序，供未知名称在列表末尾按 ID 升序展示。已知天体的最终顺序由业务层读取 names 决定，模型无需维护一份天体名称排序表。模型层保持没有 JSON tag 的设计；单数表名继续由数据库连接中的 SingularTable 配置确定。</p>
+<p>结果写入独立的 <code>planets</code> 切片，接收者中已有的 ID 不会被带入查询条件。即使调用者复用一个已经填过字段的 model.Planet，也会读取全部记录。</p>
+<p>这里使用 Find 查询集合。没有记录时属于正常结果，不转换为 PlanetNotFoundErr。First / Take 的“单条记录不存在”处理不适用于本接口。<a href="https://gorm.io/docs/query.html#Retrieving-all-objects">GORM 集合查询文档 ↗</a></p>
+</section><section id="business" aria-labelledby="business-title"><div class="section-label">04 / IMPLEMENTATION</div><h2 id="business-title">追加 biz.Planet.List()</h2>
+<p>将以下方法追加到 <code>biz/planet.go</code>。所需的 model、sys_error、context、errors 和 fillByORM 都已经存在。方法返回业务实体切片，响应 DTO 的创建由控制器完成。</p>
+<details class="code-file" open>
+<summary><span class="file-mode">追加完整方法</span><span class="file-path">biz/planet.go</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-business" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-business" data-file="biz/planet.go" data-mode="追加完整方法">// List 本方法用于查询已创建的天体列表,将模型记录转换为业务实体
+// 已知天体按 names 顺序排列;其他名称保留在末尾,沿用模型的 ID 升序
+// 空表返回空切片,不补充尚未创建的天体
+func (p *Planet) List(ctx context.Context) ([]*Planet, error) {
+	if p == nil {
+		return nil, &amp;sys_error.InternalError{
+			Cause: errors.New(&quot;nil planet entity&quot;),
+		}
+	}
+	if ctx == nil {
+		return nil, &amp;sys_error.InternalError{
+			Cause: errors.New(&quot;nil context&quot;),
+		}
+	}
+
+	orm := &amp;model.Planet{}
+	records, err := orm.FindAll(ctx)
+	if err != nil {
+		return nil, &amp;sys_error.DatabaseError{Cause: err}
+	}
+
+	recordsByName := make(map[string]*model.Planet, len(records))
+	for _, record := range records {
+		if record == nil {
+			return nil, &amp;sys_error.InternalError{
+				Cause: errors.New(&quot;nil planet record&quot;),
+			}
+		}
+		recordsByName[record.Name] = record
+	}
+
+	// 使用同一份 names 作为展示顺序来源,跳过尚未创建的天体
+	orderedRecords := make([]*model.Planet, 0, len(records))
+	for _, name := range names {
+		record, exists := recordsByName[name]
+		if !exists {
+			continue
+		}
+		orderedRecords = append(orderedRecords, record)
+		delete(recordsByName, name)
+	}
+
+	// 保留其他入口可能写入的未知名称,按原查询顺序放到末尾
+	// 遍历 records 而非 map,确保这些记录也有确定顺序
+	for _, record := range records {
+		if _, exists := recordsByName[record.Name]; exists {
+			orderedRecords = append(orderedRecords, record)
+		}
+	}
+
+	planets := make([]*Planet, 0, len(orderedRecords))
+	for _, record := range orderedRecords {
+		// 每条记录使用独立实体,避免列表元素共享同一个指针
+		planetBiz := &amp;Planet{}
+		planetBiz.fillByORM(ctx, record)
+		planetBiz.Exist = true
+		planets = append(planets, planetBiz)
+	}
+
+	return planets, nil
+}
+</code></pre></details>
+<p>列表方法返回多条业务实体，不把整个列表塞入一个代表单条天体的接收者。它不修改接收者原有字段，因此不需要调用 flush。</p>
+<p>先用 recordsByName 按名称建立索引，再遍历已有 names，将实际存在的记录追加到 orderedRecords。追加后删除对应索引，随后遍历原 records 把剩余未知名称放在末尾；这里不遍历 map 输出，因此顺序保持确定。数据库现有的名称唯一约束保证每个规范名称最多对应一条记录。</p>
+<p>最后按照 orderedRecords 的顺序创建独立的 Planet，保证切片中的元素互不覆盖。Exist=true 仅用于保持业务实体语义一致；列表响应 DTO 不包含这个字段。</p>
+<p>数据库错误先包装为 DatabaseError。异常的 nil 记录会返回 InternalError，而不是跳过后继续返回一份不完整的成功结果。空切片无需特殊报错，正常返回即可。</p>
+</section><section id="dto" aria-labelledby="dto-title"><div class="section-label">05 / IMPLEMENTATION</div><h2 id="dto-title">新增列表响应 DTO</h2>
+<p>新增下列两个文件，将整个列表与单条记录分别定义。ID 在模型和业务层仍为 int64，在响应 DTO 中为 string。</p>
+<details class="code-file" open>
+<summary><span class="file-mode">新增完整文件</span><span class="file-path">param/resp/v1/planet/list.go</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-dto" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-dto" data-file="param/resp/v1/planet/list.go" data-mode="新增完整文件">package planet
+
+// ListResp 本结构体用于定义天体列表成功响应中 data 内的数据结构
+type ListResp struct {
+	Planets []*ListPlanetResp `json:&quot;planets&quot;` // Planets 已创建的天体列表,没有记录时返回空数组
+}
+</code></pre></details><details class="code-file" open>
+<summary><span class="file-mode">新增完整文件</span><span class="file-path">param/resp/v1/planet/list_planet.go</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-dto-planet" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-dto-planet" data-file="param/resp/v1/planet/list_planet.go" data-mode="新增完整文件">package planet
+
+// ListPlanetResp 本结构体用于定义天体列表中的单条天体信息
+type ListPlanetResp struct {
+	ID    string `json:&quot;id&quot;`    // ID 雪花 ID 的十进制字符串,避免 JavaScript 整数精度丢失
+	Name  string `json:&quot;name&quot;`  // Name 天体标识,用于匹配前端资源和中文名称
+	Title string `json:&quot;title&quot;` // Title 简介标题
+	Intro string `json:&quot;intro&quot;` // Intro 简介内容
+}
+</code></pre></details>
+<p>列表 DTO 只表达本 API 公开的字段。数据库时间列和业务 Exist 字段无需直接暴露；后续确有展示需求时，再显式加入响应结构。</p>
+</section><section id="controller" aria-labelledby="controller-title"><div class="section-label">06 / IMPLEMENTATION</div><h2 id="controller-title">控制器返回 data.planets</h2>
+<p>在 <code>controller/v1/planet/planet.go</code> 现有 import 块中新增 <code>"strconv"</code>。合并后的导入区如下；这些导入同时供现有方法和新 List 方法使用。</p>
+<details class="code-file">
+<summary><span class="file-mode">合并导入区</span><span class="file-path">controller/v1/planet/planet.go · import 区</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-imports" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-imports" data-file="controller/v1/planet/planet.go · import 区" data-mode="合并导入区">import (
+	&quot;SolarNotesAdminAPI/biz&quot;
+	&quot;SolarNotesAdminAPI/param/req/v1/planet&quot;
+	respPlanet &quot;SolarNotesAdminAPI/param/resp/v1/planet&quot;
+	&quot;SolarNotesAdminAPI/resp_body&quot;
+	&quot;SolarNotesAdminAPI/sys_error&quot;
+	&quot;errors&quot;
+	&quot;net/http&quot;
+	&quot;strconv&quot;
+
+	&quot;github.com/gin-gonic/gin&quot;
+)
+</code></pre></details>
+<p>随后将以下 List 函数追加到同一文件。请求没有需要绑定的字段，所以无需调用 ShouldBindJSON 或创建一个空请求结构体。</p>
+<details class="code-file" open>
+<summary><span class="file-mode">追加完整方法</span><span class="file-path">controller/v1/planet/planet.go</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-controller" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-controller" data-file="controller/v1/planet/planet.go" data-mode="追加完整方法">// List 本函数用于处理天体列表请求,调用业务层并组装响应 DTO
+func List(c *gin.Context) {
+	respBody := &amp;resp_body.RespBody{}
+	planetBiz := &amp;biz.Planet{}
+	planets, err := planetBiz.List(c.Request.Context())
+	if err != nil {
+		var dbErr *sys_error.DatabaseError
+		if errors.As(err, &amp;dbErr) {
+			respBody.DBError(err)
+		} else {
+			respBody.InternalError(err)
+		}
+
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	// 显式初始化空切片,确保没有记录时输出 [] 而非 null
+	listResp := &amp;respPlanet.ListResp{
+		Planets: make([]*respPlanet.ListPlanetResp, 0, len(planets)),
+	}
+	for _, item := range planets {
+		planetResp := &amp;respPlanet.ListPlanetResp{
+			ID:    strconv.FormatInt(item.ID, 10),
+			Name:  item.Name,
+			Title: item.Title,
+			Intro: item.Intro,
+		}
+		listResp.Planets = append(listResp.Planets, planetResp)
+	}
+
+	respBody.Success(map[string]any{
+		&quot;planets&quot;: listResp.Planets,
+	})
+	c.JSON(http.StatusOK, respBody)
+}
+</code></pre></details>
+<p>通过 errors.As 识别数据库错误后，将原始 err 传给 DBError；其余业务错误交给 InternalError。返回错误响应后立即 return，避免继续组装成功数据。</p>
+<p><code>make([]*respPlanet.ListPlanetResp, 0, len(planets))</code> 创建了非 nil 切片，确保空结果编码为 <code>[]</code>。使用 strconv.FormatInt 将每个 ID 转为十进制字符串；前端接收后也应保持字符串类型。</p>
+<p>沿用原有 <code>Success(map[string]any)</code>：data 是对象，planets 是其中的数组，数组中的每项是天体信息对象。控制器不直接 JSON 序列化模型或业务实体。</p>
+</section><section id="route" aria-labelledby="route-title"><div class="section-label">07 / IMPLEMENTATION</div><h2 id="route-title">注册路由与前端调用约定</h2>
+<p>在 <code>main.go</code> 的 <code>newRouter()</code> 中，将现有 v1 路由组更新为下列内容，实际只新增最后一行。</p>
+<details class="code-file" open>
+<summary><span class="file-mode">追加一条路由</span><span class="file-path">main.go · newRouter 的 v1 路由组</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-route" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-route" data-file="main.go · newRouter 的 v1 路由组" data-mode="追加一条路由">v1 := router.Group(v1Prefix)
+{
+	v1.POST(loginPath, admin.Login)
+	v1.GET(&quot;/planet/status&quot;, planet.ShowStatus)
+	v1.POST(&quot;/planet/create&quot;, planet.Create)
+	v1.GET(&quot;/planet/list&quot;, planet.List)
+}
+</code></pre></details>
+<p>注册位置保持在 router.Use(...) 之后。列表请求沿用全局管理员鉴权，免鉴权集合继续仅包含 POST 登录接口；不需要为 List 再注册一份鉴权中间件。</p>
+<p>鉴权成功才会进入列表查询。已有鉴权中间件会写入 Cache-Control: no-store，前端每次请求列表可获取当次查询结果。OPTIONS 预检仍由 CorsPreflight 返回 204 并停止。</p>
+<h3>与当前前端列表的字段对应</h3>
+<p>当前 <code>BodyListPage.vue</code> 的表格以 id 作为 row-key，显示 name、title、intro；中文天体名称由前端固定配置根据 name 得到。这与本 API 的四字段结构对应。</p>
+<p>前端 <code>src/api/body.js</code> 的 getBodyList() 目前仍是内存演示实现。后续接入真实接口时，应先判断统一响应业务码，再将 <code>data.planets</code> 提供给页面使用；不要把 HTTP 200 单独当作业务成功。</p>
+<p>创建成功仍只返回 <code>data: {}</code>。页面可以在创建成功后重新请求 GET /v1/planet/list 刷新列表。本文提供后端实现方案，未修改前端调用代码。</p>
+</section><section id="verification" aria-labelledby="verification-title"><div class="section-label">08 / IMPLEMENTATION</div><h2 id="verification-title">实施与验证</h2>
+<ol><li>在模型和业务文件中分别追加 FindAll、List。</li><li>新增两个响应 DTO 文件。</li><li>为控制器增加 strconv 导入并追加 List 函数。</li><li>在现有 v1 路由组新增 GET /planet/list。</li><li>格式化、检查编译并重启服务，随后用 Postman 验收。</li></ol>
+<details class="code-file">
+<summary><span class="file-mode">检查与启动</span><span class="file-path">工程根目录 · 应用文档后执行</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-commands" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-commands" data-file="工程根目录 · 应用文档后执行" data-mode="检查与启动">gofmt -w model/planet.go biz/planet.go param/resp/v1/planet/list.go param/resp/v1/planet/list_planet.go controller/v1/planet/planet.go main.go
+go test -mod=readonly -vet=all ./...
+go run .
+</code></pre></details>
+<p class="small">实际工程当前没有自动化测试用例。单独执行上述 go test 主要检查编译和静态问题；下方文档示例的回归测试位于独立临时副本。</p>
+<h3>Postman 与 curl</h3>
+<p>请求方法选择 GET，URL 为 <code>{{base_url}}/v1/planet/list</code>，不填写 Body。在 Authorization → Bearer Token 中填写登录接口返回的完整 JWT，不额外输入 Bearer 前缀；Postman 会自动生成 Authorization 请求头。</p>
+<details class="code-file">
+<summary><span class="file-mode">只读请求示例</span><span class="file-path">终端 · 查询列表</span></summary>
+<div class="code-toolbar"><button type="button" data-copy="code-curl" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div>
+<pre><code id="code-curl" data-file="终端 · 查询列表" data-mode="只读请求示例"># 将地址端口和令牌替换为当前环境的实际值
+curl --include --silent --show-error \
+  -H &#x27;Authorization: Bearer &lt;替换为登录接口返回的完整JWT&gt;&#x27; \
+  &#x27;http://127.0.0.1:4060/v1/planet/list&#x27;
+</code></pre></details>
+<div class="table-wrap"><table><thead><tr><th>验收情形</th><th>预期结果</th></tr></thead><tbody>
+<tr><td>数据库没有天体</td><td>HTTP 200，code=200，data.planets=[]。</td></tr>
+<tr><td>已有一条或多条记录</td><td>每条实际记录返回一次；字段为 id/name/title/intro，已知天体按 names 顺序，未知名称放在末尾按 ID 升序。</td></tr>
+<tr><td>ID 超过 JavaScript 安全整数范围</td><td>JSON 中仍是完整字符串，没有数值精度丢失。</td></tr>
+<tr><td>没有令牌、无效令牌、已撤销令牌</td><td>code=20004，不执行天体列表查询。</td></tr>
+<tr><td>JWT 仅过期</td><td>code=20003，不执行天体列表查询。</td></tr>
+<tr><td>数据库故障</td><td>code=10201，data={}，不会返回成功的空数组。</td></tr>
+<tr><td>创建成功后重新查询</td><td>创建仍返回data={}；新记录可出现在列表中。</td></tr>
+<tr><td>仍调用原状态接口</td><td>保留原有九种名称的 name/exist 响应。</td></tr>
+</tbody></table></div>
+<p class="small">空表和数据库故障场景请在专用测试环境验收，不需要清空现有业务数据。本次编写没有连接数据库执行写入。</p>
+<h3>文档示例验证记录</h3><div id="verification-results"><p>文档示例已在独立临时副本执行 <code>go test -mod=readonly -race -vet=all -count=1 -timeout=60s ./...</code>，编译、静态检查和回归测试全部通过。</p>
+<div class="table-wrap"><table><thead><tr><th>覆盖范围</th><th>结果</th></tr></thead><tbody>
+<tr><td>实际路由、空表 []、全部记录按 names 展示、未知名称位于末尾且按 ID 升序、每条仅四字段、大于 2^53 的 ID 字符串</td><td class="status-pass">通过</td></tr>
+<tr><td>九种天体的 ID 与插入顺序均反转时仍按 names 返回；部分已创建时无占位；未知名称在末尾，只有未知名称时也完整保留</td><td class="status-pass">通过</td></tr>
+<tr><td>中文、换行、引号、反斜杠、HTML 字符、emoji；独立查询结果不受接收者旧 ID 影响</td><td class="status-pass">通过</td></tr>
+<tr><td>缺失、无效、过期令牌在查询前被阻断；数据库故障为 10201，原因保留且不对外泄露</td><td class="status-pass">通过</td></tr>
+<tr><td>nil 接收者、nil context、nil DB、取消 context、异常 nil 记录</td><td class="status-pass">通过</td></tr>
+<tr><td>创建成功仍返回 data:{}，创建后列表可读到记录；状态接口仍有九项；GET 不执行写入</td><td class="status-pass">通过</td></tr>
+<tr><td>24 个并发列表调用结果互不共享元素指针，修改一份结果不会污染其他结果或数据库</td><td class="status-pass">通过</td></tr>
+<tr><td>原创建接口的参数、重复创建、并发、错误链及失败状态清理回归</td><td class="status-pass">通过</td></tr>
+</tbody></table></div>
+<p class="small">测试使用专用配置、测试 JWT 密钥和 SQLite 内存库，没有使用真实开发密钥，也没有对本地 MySQL 执行写入。未验证 MySQL 特有排序规则、执行计划或实际部署链路。测试文件及 SQLite 依赖仅存在于临时副本，本次实际工程仅新增这份 HTML 文档。</p>
+</div>
+</section>
+<footer>SolarNotesAdminAPI · 天体列表 API 实现文档 · 2026-11-16 · 单文件 HTML，无外部脚本、字体或图片依赖。</footer>
+</main></div><script>
+"use strict";
+(() => {
+  const files = [...document.querySelectorAll("details.code-file")];
+  const expand = document.getElementById("expand-all");
+  const collapse = document.getElementById("collapse-all");
+  expand.hidden = false;
+  collapse.hidden = false;
+  expand.addEventListener("click", () => files.forEach(file => { file.open = true; }));
+  collapse.addEventListener("click", () => files.forEach(file => { file.open = false; }));
+
+  async function copyText(value) {
+    if (navigator.clipboard && window.isSecureContext) {
+      try { await navigator.clipboard.writeText(value); return true; } catch (_) { /* 尝试备用方式 */ }
+    }
+    const field = document.createElement("textarea");
+    field.value = value;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.left = "-9999px";
+    document.body.append(field);
+    field.select();
+    let copied = false;
+    try { copied = document.execCommand("copy"); } catch (_) { copied = false; }
+    field.remove();
+    return copied;
+  }
+
+  document.querySelectorAll("[data-copy]").forEach(button => {
+    const code = document.getElementById(button.dataset.copy);
+    const feedback = button.nextElementSibling;
+    if (!code) return;
+    button.hidden = false;
+    button.addEventListener("click", async () => {
+      const ok = await copyText(code.textContent);
+      feedback.textContent = ok ? "已复制" : "复制失败，请手动选择代码";
+      window.setTimeout(() => { feedback.textContent = ""; }, 2500);
+    });
+  });
+})();
+</script></body></html>

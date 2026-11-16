@@ -107,3 +107,30 @@ func (p *Planet) Insert(ctx context.Context) error {
 
 	return nil
 }
+
+// FindAll 本方法用于查询已创建的全部天体,按 ID 升序提供稳定的读取顺序
+// 使用独立切片承接结果,不将接收者中已有的 ID 或名称作为查询条件
+func (p *Planet) FindAll(ctx context.Context) ([]*Planet, error) {
+	if p == nil {
+		return nil, errors.New("nil planet model")
+	}
+
+	if ctx == nil {
+		return nil, errors.New("nil planet query context")
+	}
+
+	if db.DB == nil {
+		return nil, errors.New("database is not initialized")
+	}
+
+	planets := make([]*Planet, 0)
+	err := db.DB.WithContext(ctx).
+		Select("id", "name", "title", "intro").
+		Order("id ASC").
+		Find(&planets).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return planets, nil
+}
