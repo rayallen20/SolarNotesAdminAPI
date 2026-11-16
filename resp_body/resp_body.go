@@ -22,6 +22,9 @@ const (
 	TokenExpiredCode         = 20003 // TokenExpiredCode token过期状态码
 	InvalidTokenCode         = 20004 // InvalidTokenCode token无效状态码
 	LoginRateLimitCode       = 20005 // LoginRateLimitCode 请求登录接口触发访问频率限制状态码
+
+	PlanetExistCode = 20101 // PlanetExistCode 请求创建的天体名称已经存在状态码
+
 )
 
 type RespBody struct {
@@ -93,4 +96,9 @@ func (r *RespBody) TokenExpiredError() {
 // InvalidToken 本方法用于生成令牌无效或已撤销响应时的响应体
 func (r *RespBody) InvalidToken() {
 	r.failure(InvalidTokenCode, "登录状态无效,请重新登录")
+}
+
+// PlanetExistError 本方法用于生成天体名称重复时的响应体
+func (r *RespBody) PlanetExistError() {
+	r.failure(PlanetExistCode, "请求创建的天体已存在,无法创建")
 }

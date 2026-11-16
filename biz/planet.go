@@ -2,6 +2,8 @@ package biz
 
 import (
 	"SolarNotesAdminAPI/model"
+	"SolarNotesAdminAPI/param/req/v1/planet"
+	"SolarNotesAdminAPI/snowflake"
 	"SolarNotesAdminAPI/sys_error"
 	"context"
 	"errors"
@@ -84,4 +86,83 @@ func (p *Planet) fillByORM(ctx context.Context, record *model.Planet) {
 	p.Name = record.Name
 	p.Title = record.Title
 	p.Intro = record.Intro
+}
+
+func (p *Planet) Create(ctx context.Context, req *planet.CreateReq) error {
+	if p == nil {
+		return &sys_error.InternalError{
+			Cause: errors.New("nil planet entity"),
+		}
+	}
+	p.flush(ctx)
+
+	if ctx == nil {
+		return &sys_error.InternalError{
+			Cause: errors.New("nil context"),
+		}
+	}
+
+	if req == nil {
+		return &sys_error.InternalError{
+			Cause: errors.New("nil create request"),
+		}
+	}
+
+	if req.Planet == nil {
+		return &sys_error.InternalError{
+			Cause: errors.New("nil create planet request"),
+		}
+	}
+
+	orm := &model.Planet{}
+	record, err := orm.FindByName(ctx, req.Planet.Name)
+	if err != nil {
+		if !errors.Is(err, model.PlanetNotFoundErr) {
+			return &sys_error.DatabaseError{Cause: err}
+		}
+	}
+
+	if record != nil {
+		return sys_error.PlanetExistErr
+	}
+
+	orm = &model.Planet{
+		ID:    snowflake.Next(),
+		Name:  req.Planet.Name,
+		Title: req.Planet.Title,
+		Intro: req.Planet.Intro,
+	}
+	err = orm.Insert(ctx)
+	if err != nil {
+		if errors.Is(err, model.PlanetDuplicateKeyErr) {
+			existRecord, findErr := orm.FindByName(ctx, req.Planet.Name)
+			if existRecord != nil {
+				return sys_error.PlanetExistErr
+			}
+
+			if findErr != nil {
+				if !errors.Is(findErr, model.PlanetNotFoundErr) {
+					return &sys_error.DatabaseError{
+						Cause: errors.Join(err, findErr),
+					}
+				}
+			}
+		}
+
+		return &sys_error.DatabaseError{Cause: err}
+	}
+
+	p.fillByORM(ctx, orm)
+	p.Exist = true
+
+	return nil
+}
+
+// flush 本方法用于清空天体业务实体的所有字段,以防止实例复用导致的旧数据残留
+func (p *Planet) flush(ctx context.Context) {
+	p.ID = 0
+	p.Name = ""
+	p.Title = ""
+	p.Intro = ""
+	p.Exist = false
 }
