@@ -1,6 +1,7 @@
 package biz
 
 import (
+	"SolarNotesAdminAPI/paginate"
 	"context"
 	"errors"
 
@@ -66,4 +67,37 @@ func (b *Book) fillByORM(ctx context.Context, record *model.Book) {
 		DisplayStatus: record.DisplayStatus,
 		Planet:        planet,
 	}
+}
+
+// List 本方法用于分页查询书籍列表,返回当前页的书籍记录,总记录数和总页数
+func (b *Book) List(ctx context.Context, req *reqBook.ListReq) ([]*Book, int64, int64, error) {
+	if b == nil || ctx == nil {
+		return nil, 0, 0, &sys_error.InternalError{Cause: errors.New("nil book entity or context")}
+	}
+
+	if req == nil || req.Pagination == nil || req.Pagination.CurrentPage == nil || req.Pagination.ItemPerPage == nil {
+		return nil, 0, 0, paginate.ErrInvalidPage
+	}
+
+	input := req.Pagination
+	page, err := paginate.NewPage(*input.CurrentPage, *input.ItemPerPage)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	orm := &model.Book{}
+	records, total, err := orm.ListPage(ctx, page)
+	if err != nil {
+		return nil, 0, 0, &sys_error.DatabaseError{Cause: err}
+	}
+
+	books := make([]*Book, 0, len(records))
+	for _, record := range records {
+		item := &Book{}
+		item.fillByORM(ctx, record)
+
+		books = append(books, item)
+	}
+
+	return books, total, page.TotalPages(total), nil
 }

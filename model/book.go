@@ -2,8 +2,11 @@ package model
 
 import (
 	"SolarNotesAdminAPI/db"
+	"SolarNotesAdminAPI/paginate"
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
@@ -117,5 +120,123 @@ func (b *Book) insertWithPlanet(tx *gorm.DB) error {
 	}
 
 	b.Planet = planet
+	return nil
+}
+
+// ListPage 本方法用于在一个只读事务中统计和读取书籍, 返回当前页以及分页前的总条数
+func (b *Book) ListPage(ctx context.Context, page paginate.Page) ([]*Book, int64, error) {
+	if b == nil || ctx == nil {
+		return nil, 0, errors.New("nil book model or list context")
+	}
+
+	if !page.Valid() {
+		return nil, 0, errors.New("invalid book list pagination")
+	}
+
+	if db.DB == nil {
+		return nil, 0, errors.New("database is not initialized")
+	}
+
+	tx := db.DB.WithContext(ctx).Begin(&sql.TxOptions{
+		Isolation: sql.LevelRepeatableRead,
+		ReadOnly:  true,
+	})
+	if tx.Error != nil {
+		return nil, 0, tx.Error
+	}
+	// 提前返回或 panic 时回滚. 成功提交后, 延迟回滚不会改变已提交的结果
+	defer tx.Rollback()
+
+	var total int64
+	if err := tx.Model(&Book{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	records := make([]*Book, 0)
+	if int64(page.Offset()) < total {
+		var err error
+		records, err = b.readPage(tx, page)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return nil, 0, err
+	}
+
+	return records, total, nil
+}
+
+// readPage 本方法用于按天体 ID, 排序值和书籍 ID 读取一页, 再补齐所属天体
+func (b *Book) readPage(tx *gorm.DB, page paginate.Page) ([]*Book, error) {
+	var records []*Book
+
+	err := tx.Model(&Book{}).
+		Select("id", "planet_id", "title", "sort", "display_status").
+		Order("planet_id ASC").
+		Order("sort ASC").
+		Order("id ASC").
+		Scopes(page.Paginate).
+		Find(&records).Error
+	if err != nil {
+		return nil, err
+	}
+
+	err = b.loadPlanets(tx, records)
+	if err != nil {
+		return nil, err
+	}
+
+	return records, nil
+}
+
+// loadPlanets 本方法用于在同一个事务内批量查询本页涉及的天体, 保留书籍的原顺序
+func (b *Book) loadPlanets(tx *gorm.DB, records []*Book) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	planetIDs := make([]int64, 0, len(records))
+	seenIDs := make(map[int64]struct{}, len(records))
+	for _, record := range records {
+		if record == nil {
+			return errors.New("book list data is inconsistent: nil book record")
+		}
+
+		if _, exists := seenIDs[record.PlanetID]; exists {
+			continue
+		}
+
+		seenIDs[record.PlanetID] = struct{}{}
+		planetIDs = append(planetIDs, record.PlanetID)
+	}
+
+	planets := make([]*Planet, 0, len(planetIDs))
+	if err := tx.Model(&Planet{}).
+		Select("id", "name", "title", "intro").
+		Where("id IN ?", planetIDs).
+		Find(&planets).Error; err != nil {
+		return err
+	}
+
+	planetsByID := make(map[int64]*Planet, len(planets))
+	for _, planet := range planets {
+		if planet == nil {
+			return errors.New("book list data is inconsistent: nil planet record")
+		}
+
+		planetsByID[planet.ID] = planet
+	}
+
+	for _, record := range records {
+		planet, exists := planetsByID[record.PlanetID]
+		if !exists {
+			return fmt.Errorf("book list data is inconsistent: book %d references missing planet %d", record.ID, record.PlanetID)
+		}
+
+		record.Planet = planet
+	}
+
 	return nil
 }
