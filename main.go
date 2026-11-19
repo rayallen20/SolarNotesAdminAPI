@@ -3,6 +3,7 @@ package main
 import (
 	"SolarNotesAdminAPI/conf"
 	"SolarNotesAdminAPI/controller/v1/admin"
+	"SolarNotesAdminAPI/controller/v1/book"
 	"SolarNotesAdminAPI/controller/v1/planet"
 	"SolarNotesAdminAPI/db"
 	"SolarNotesAdminAPI/middleware"
@@ -119,6 +120,7 @@ func newRouter(serviceConf conf.Service) (*gin.Engine, error) {
 		v1.GET("/planet/status", planet.ShowStatus)
 		v1.POST("/planet/create", planet.Create)
 		v1.GET("/planet/list", planet.List)
+		v1.POST("/book/create", book.Create)
 	}
 
 	return router, nil

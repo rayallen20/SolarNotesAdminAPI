@@ -1,5 +1,7 @@
 package resp_body
 
+import "SolarNotesAdminAPI/sys_error"
+
 // 响应码规则:
 // 200: 成功响应
 // 500: 服务端内部错误
@@ -24,6 +26,9 @@ const (
 	LoginRateLimitCode       = 20005 // LoginRateLimitCode 请求登录接口触发访问频率限制状态码
 
 	PlanetExistCode = 20101 // PlanetExistCode 请求创建的天体名称已经存在状态码
+
+	BookPlanetNotFoundCode = 20102 // BookPlanetNotFoundCode 天体引用失效状态码
+	BookSortOccupiedCode   = 20201 // BookSortOccupiedCode 给定天体下的书籍排序冲突状态码
 
 )
 
@@ -101,4 +106,14 @@ func (r *RespBody) InvalidToken() {
 // PlanetExistError 本方法用于生成天体名称重复时的响应体
 func (r *RespBody) PlanetExistError() {
 	r.failure(PlanetExistCode, "请求创建的天体已存在,无法创建")
+}
+
+// BookPlanetNotFoundError 本方法用于生成天体引用失效时的响应体
+func (r *RespBody) BookPlanetNotFoundError() {
+	r.failure(BookPlanetNotFoundCode, sys_error.BookPlanetNotFoundErr.Error())
+}
+
+// BookSortOccupiedError 本方法用于生成给定天体下书籍排序冲突时的响应体
+func (r *RespBody) BookSortOccupiedError() {
+	r.failure(BookSortOccupiedCode, sys_error.BookSortOccupiedErr.Error())
 }

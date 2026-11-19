@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="SolarNotesAdminAPI 创建书籍接口参考，涵盖请求绑定、事务、排序冲突和接口联调。"><title>创建书籍 API 实现文档 · Solar Notes</title><style>
+:root{color-scheme:light;--paper:#f3f6f2;--ink:#1d302a;--muted:#5e7068;--line:#dce5dc;--green:#21644c;--soft:#e7f1e8;--amber:#846013;--warm:#fbf2db;--blue:#275e7a;--mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:24px}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.82 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+a{color:var(--green);text-underline-offset:4px;overflow-wrap:anywhere}a:hover{color:#103d2b}:focus-visible{outline:3px solid #4485ae;outline-offset:3px}[hidden]{display:none!important}
+.skip{position:absolute;top:-80px;left:20px;background:white;padding:10px 16px;z-index:4}.skip:focus{top:12px}
+.page{width:min(1350px,100%);margin:auto;display:grid;grid-template-columns:228px minmax(0,1fr);gap:54px;padding:40px 38px 80px}.sidebar{position:sticky;top:28px;align-self:start;max-height:calc(100vh - 56px);overflow:auto}
+.brand{font-size:12px;font-weight:800;letter-spacing:.1em;color:var(--green)}.brand::before{content:"";display:inline-block;width:12px;height:12px;border:3px solid var(--green);border-radius:50%;margin-right:8px;vertical-align:-1px}.sidebar p{font-size:13px;color:var(--muted);line-height:1.7}.sidebar nav{display:grid;gap:3px;margin-top:22px}.sidebar nav a{display:flex;gap:12px;padding:7px 9px;border-radius:7px;text-decoration:none;color:var(--muted);font-size:14px}.sidebar nav a:hover{background:var(--soft);color:var(--green)}.sidebar nav span{color:var(--green);font:12px/2 var(--mono)}.side-note{border-top:1px solid var(--line);padding-top:16px;margin-top:22px}
+main{min-width:0}.eyebrow,.section-label{color:var(--green);font:700 12px/1.5 var(--mono);letter-spacing:.1em}.hero h1{font-size:clamp(33px,4vw,48px);line-height:1.25;letter-spacing:-.03em;margin:16px 0}.lede{font-size:18px;color:var(--muted);max-width:820px}.tags{display:flex;flex-wrap:wrap;gap:8px;margin:24px 0}.tag{border:1px solid var(--line);border-radius:30px;padding:4px 11px;font-size:12px;background:white;color:var(--muted)}
+.thesis{background:#194b39;color:#fff;border-radius:14px;padding:22px 25px}.thesis p{margin:0}.thesis strong{color:#d4f5dc}.page-tools{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:20px 0}.page-tools button,.code-toolbar button{font:inherit;font-size:13px;border:1px solid var(--green);border-radius:7px;background:white;color:var(--green);cursor:pointer;padding:6px 12px}.page-tools button:hover,.code-toolbar button:hover{background:var(--soft)}
+section{padding-top:42px;margin-top:10px}h2{font-size:27px;line-height:1.4;letter-spacing:-.02em;margin:8px 0 20px}h3{font-size:19px;line-height:1.55;margin:27px 0 10px}p{margin:12px 0}code{font:.87em/1.7 var(--mono);background:#e8f0e8;border-radius:4px;padding:2px 5px;overflow-wrap:anywhere}pre{margin:14px 0;padding:19px 22px;background:#1d3029;color:#e5efe6;border-radius:10px;overflow-x:auto;tab-size:2;font:13px/1.75 var(--mono)}pre code{font:inherit;background:transparent;color:inherit;padding:0;border-radius:0;overflow-wrap:normal}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:18px 0}.card{border:1px solid var(--line);background:#fffefa;border-radius:12px;padding:18px 19px}.card .n{color:var(--green);font:12px/1.5 var(--mono)}.card h3{margin:6px 0;font-size:16px}.card p{font-size:14px;color:var(--muted);margin:0}
+.note{background:var(--soft);border-left:3px solid var(--green);border-radius:0 8px 8px 0;padding:15px 18px;margin:20px 0;font-size:14px}.note.warning{background:var(--warm);border-color:var(--amber)}.note p{margin:0}.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:white;margin:18px 0}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;vertical-align:top;padding:12px 15px;border-bottom:1px solid var(--line);min-width:105px}th{color:var(--green);background:#edf3ec;font-weight:650}tr:last-child td{border-bottom:0}ul,ol{padding-left:23px}li{margin:8px 0}.small{font-size:13px;color:var(--muted)}
+details.code-file{border:1px solid var(--line);background:#fffefa;border-radius:10px;overflow:hidden;margin:18px 0}details.code-file summary{padding:14px 17px;cursor:pointer;font-weight:650;overflow-wrap:anywhere;line-height:1.7}.file-mode{display:inline-block;font-size:11px;padding:2px 7px;border-radius:5px;background:var(--soft);color:var(--green);margin-right:9px;font-weight:500}.file-path{font:13px/1.7 var(--mono)}.code-toolbar{display:flex;align-items:center;gap:10px;padding:9px 16px;border-top:1px solid var(--line)}.copy-feedback{font-size:12px;color:var(--muted)}.code-file pre{margin:0;border-radius:0;font-size:12.5px}footer{margin-top:45px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+@media(max-width:1050px){.page{gap:27px;padding-left:24px;padding-right:24px;grid-template-columns:185px minmax(0,1fr)}}@media(max-width:800px){.page{display:block;padding:24px 20px 55px}.sidebar{position:static;max-height:none;margin-bottom:32px}.sidebar nav{display:flex;gap:5px;overflow-x:auto;margin-top:15px;padding-bottom:8px}.sidebar nav a{white-space:nowrap;border:1px solid var(--line);padding:5px 9px}.sidebar p,.side-note{display:none}.grid{grid-template-columns:1fr}h2{font-size:24px}}
+@media(max-width:520px){pre{padding:16px;font-size:12px}th,td{padding:10px 12px}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}@media print{body{background:white;color:black;font-size:11pt}.page{display:block;width:100%;padding:0}.sidebar,.page-tools,.code-toolbar,.skip{display:none!important}.thesis{background:#eee;color:black}.thesis strong{color:black}section{padding-top:20px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f3f3;color:black;font-size:8pt}.code-file{overflow:visible!important}.table-wrap{overflow:visible}a{color:black}}
+
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:10px;margin:24px 0}.flow-step{flex:1 1 175px;border:1px solid var(--line);border-radius:10px;background:#fffefa;padding:13px 16px;font-size:14px}.flow-step strong{display:block;color:var(--green);font-size:15px}.flow-step span{color:var(--muted)}.flow-arrow{display:flex;align-items:center;color:var(--green);font-size:18px}.lead-code{font:13px/1.7 var(--mono);color:var(--green)}@media(max-width:800px){.flow-arrow{display:none}.flow-step{flex-basis:100%}}
+
+.endpoint{display:inline-flex;align-items:center;gap:10px;margin:5px 0 13px;color:var(--green);font:14px/1.6 var(--mono)}.endpoint b{font-size:11px;letter-spacing:.05em;background:var(--soft);padding:3px 8px;border-radius:5px}.status-pass{color:var(--green);font-weight:650}.change-list strong{color:var(--green)}.table-wrap caption{text-align:left;padding:12px 15px;background:#fffefa;font-weight:650}.inline-path{font-family:var(--mono);font-size:.9em}main section{scroll-margin-top:20px}.flow-step code{font-size:12px}
+
+.pipeline{list-style:none;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:22px 0}.pipeline li{margin:0;border:1px solid var(--line);background:#fffefa;border-radius:10px;padding:16px}.pipeline .index{display:block;font:12px/1.5 var(--mono);color:var(--green);margin-bottom:5px}.pipeline strong{display:block;font-size:15px}.pipeline p{font-size:13px;color:var(--muted);margin:5px 0 0}.source-ref{font-size:12px;white-space:normal}.rule-line{border-top:1px solid var(--line);padding-top:16px;margin-top:22px}.endpoint span{overflow-wrap:anywhere}@media(max-width:800px){.pipeline{grid-template-columns:1fr}.pipeline li{padding:13px 15px}}
+
+.summary-row{display:flex;gap:1em;align-items:center;margin:.6em 0 1.1em}.summary-row code{font-size:1em}.code-file summary:focus-visible{outline-offset:-3px}.code-file pre{max-height:42rem}.table-wrap td code{overflow-wrap:anywhere}@media print{.code-file pre{max-height:none}}</style></head><body>
+<a href="#content" class="skip">跳到正文</a><div class="page"><aside class="sidebar" aria-label="文档导航"><div class="brand">Solar Notes / 开发文档</div><nav aria-label="目录"><a href="#contract">接口约定</a><a href="#fields">字段与存储</a><a href="#migration">数据库迁移</a><a href="#bind">请求校验</a><a href="#model">模型与事务</a><a href="#biz">业务与错误</a><a href="#http">响应与路由</a><a href="#check">联调与验收</a></nav><p class="side-note"><a href="planet-list-api-implementation.html">天体列表 API 实现文档</a></p></aside>
+<main id="content"><header class="hero"><h1>创建书籍 API</h1><div class="endpoint"><b>POST</b><span>/v1/book/create</span></div><p class="lede">管理员选择一个已创建的天体，填写书名、排序值和显示状态。后端为书籍生成雪花 ID，写入成功后返回空对象。</p>
+<div class="page-tools"><button type="button" id="expand-all" hidden>展开全部代码</button><button type="button" id="collapse-all" hidden>折叠全部代码</button></div></header>
+<section id="contract" aria-labelledby="contract-title"><h2 id="contract-title">请求与成功响应</h2><p>在 Postman 中选择 <strong>POST</strong>，地址填写 <code>{{base_url}}/v1/book/create</code>。在 Authorization 页签选择 Bearer Token，Token 栏填写登录返回的完整 JWT。在 Body 中选择 raw 和 JSON，请求的 <code>Content-Type</code> 为 <code>application/json</code>。</p><details class="code-file" open><summary><span class="file-mode">JSON</span><span class="file-path">请求体</span></summary><div class="code-toolbar"><button type="button" data-copy="request" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="request">{
+  &quot;book&quot;: {
+    &quot;title&quot;: &quot;书籍标题&quot;,
+    &quot;sort&quot;: 1,
+    &quot;display_status&quot;: &quot;visible&quot;,
+    &quot;planet&quot;: {
+      &quot;id&quot;: &quot;2000001&quot;
+    }
+  }
+}</code></pre></details><p>先从 <code>GET /v1/planet/list</code> 返回的 <code>data.planets</code> 中选择实际存在的天体，用它的字符串 ID 替换示例中的 <code>"2000001"</code>。</p><details class="code-file" open><summary><span class="file-mode">HTTP 200</span><span class="file-path">成功响应</span></summary><div class="code-toolbar"><button type="button" data-copy="response" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="response">{
+  &quot;code&quot;: 200,
+  &quot;message&quot;: &quot;success&quot;,
+  &quot;data&quot;: {}
+}</code></pre></details><p>提交事务成功后返回空对象。网络中断而无法确定结果时，重复提交同一天体和排序值可能收到排序占用，不能据此认定第一次请求失败。</p></section><section id="fields" aria-labelledby="fields-title"><h2 id="fields-title">从添加表单到数据库</h2><p>前端 <code>/admin/books</code> 的添加抽屉会请求真实天体列表。页面目前显示固定书籍样例，点击确认后仅执行校验；下表给出接入创建接口时的字段映射。<a href="../../SolarNotesAdmin/src/views/BookListPage.vue">书籍表单</a> · <a href="../../SolarNotesAdmin/src/api/body.js">天体列表请求</a></p><div class="table-wrap"><table><thead><tr><th scope="col">请求字段</th><th scope="col">表单字段与接口要求</th><th scope="col">后端处理</th></tr></thead><tbody><tr><td><code>book.title</code></td><td>先去除首尾空白，再接受 1 至 20 个 Unicode 码点。</td><td>保存修整后的书名。列为 <code>VARCHAR(50)</code>，接口采用 20 字的业务上限。允许同名。</td></tr><tr><td><code>book.sort</code></td><td>JSON 整数。<code>hidden</code> 允许 0 至 2147483647；<code>visible</code> 允许 1 至 2147483647。表单初始值为 1。</td><td>保留有符号 <code>INT NOT NULL</code>。请求校验和表级 <code>CHECK</code> 同时按显示状态约束下限。</td></tr><tr><td><code>book.display_status</code></td><td>必填，精确匹配 <code>visible</code> 或 <code>hidden</code>，表单初始值为 <code>visible</code>。</td><td>按原值写入同名 ENUM 列。请求漏传时返回参数错误。</td></tr><tr><td><code>book.planet.id</code></td><td>表单将所选 <code>planet.id</code> 暂存为 <code>addForm.planet_id</code>；发送时封装为嵌套对象。</td><td>JSON 使用带引号的十进制字符串，服务端按正 <code>int64</code> 读取、检查天体存在，并写入 <code>book.planet_id</code>。</td></tr></tbody></table></div><p>已核对本地 <code>solar_notes.book</code> 的 InnoDB 表结构。主键 <code>id</code> 为 BIGINT，由服务端调用 <code>snowflake.Next()</code> 生成。数据库负责填充 <code>created_at</code> 和 <code>updated_at</code>；本接口只需要写入五个业务列。</p><div class="note"><strong>数据库已建有联合唯一索引 <code>uk_planet_sort (planet_id, sort)</code>。</strong> 地球和火星可以各有一本排序值为 1 的书。地球已有一本隐藏书占用 1 时，再添加一本可见书也会冲突。同一天体最多有一本隐藏书使用 0，不同天体可各自使用 0。</div></section><section id="migration" aria-labelledby="migration-title"><h2 id="migration-title">给现有 book 表添加排序约束</h2>
+<p>先检查存量数据。下列查询取新约束的反面；<code>sort</code> 和 <code>display_status</code> 在现有表中均为 <code>NOT NULL</code>。</p><details class="code-file" open><summary><span class="file-mode">只读 SQL</span><span class="file-path">检查违反新规则的记录</span></summary><div class="code-toolbar"><button type="button" data-copy="precheck-sort" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="precheck-sort">SELECT id, planet_id, display_status, sort
+FROM solar_notes.book
+WHERE NOT (
+       (display_status = &#x27;hidden&#x27; AND sort &gt;= 0)
+   OR (display_status = &#x27;visible&#x27; AND sort &gt; 0)
+)
+ORDER BY planet_id, sort, id;</code></pre></details>
+<p>若查到记录，先按书籍的实际展示顺序为它们选定同一天体下尚未占用的排序值，再重新检查。批量把负数改成 0 或 1 可能触发原有唯一索引。</p>
+<p>预检返回空集后执行一次下面的 DDL。MySQL 8.0.16 起会强制执行这类 <code>CHECK</code>。添加时数据库会再次验证已有记录；若此时仍有违规行，添加操作会失败。<a href="https://dev.mysql.com/doc/refman/8.0/en/create-table-check-constraints.html">MySQL 的 CHECK 约束</a> · <a href="https://dev.mysql.com/doc/refman/8.4/en/alter-table.html">ALTER TABLE 对已有记录的检查</a></p><details class="code-file" open><summary><span class="file-mode">迁移 SQL</span><span class="file-path">添加显示状态与排序的联合检查</span></summary><div class="code-toolbar"><button type="button" data-copy="add-sort-check" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="add-sort-check">ALTER TABLE solar_notes.book
+ADD CONSTRAINT chk_book_display_sort
+CHECK (
+       (display_status = &#x27;hidden&#x27; AND sort &gt;= 0)
+   OR (display_status = &#x27;visible&#x27; AND sort &gt; 0)
+);</code></pre></details>
+<p>执行后可用下面的语句确认表中同时存在 <code>chk_book_display_sort</code> 和 <code>uk_planet_sort</code>。前者约束每一行的状态与排序组合，后者保证同一天体的排序值唯一。</p><details class="code-file" open><summary><span class="file-mode">只读 SQL</span><span class="file-path">核对最终表结构</span></summary><div class="code-toolbar"><button type="button" data-copy="show-book" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="show-book">SHOW CREATE TABLE solar_notes.book;</code></pre></details>
+<p>约束同时作用于插入和更新。一本排序为 0 的隐藏书要改为可见时，应在同一条 <code>UPDATE</code> 中将状态改为 <code>visible</code>，并把排序设为该天体下未占用的正整数。</p></section><section id="bind" aria-labelledby="bind-title"><h2 id="bind-title">绑定请求并校验字段</h2><p>在 <code>param/req/v1/book/create.go</code> 定义嵌套对象。<code>sort</code> 用 <code>*int32</code>，这样 <code>required</code> 可以拒绝缺失或 <code>null</code>，同时区分显式传入的 <code>0</code>。<code>gte=0</code> 拒绝两种状态下的负数。整数溢出和字段类型错误在 JSON 解码时失败。<code>id,string</code> 让解码器直接从字符串得到整数，全程保留雪花 ID 精度。</p>
+<h3>复用前端的空白处理规则</h3><p>需要对齐前端 <code>String.prototype.trim()</code> 的字段可以共用 <code>jstext.TrimSpace</code>。例如，前端会移除两端的 <code>U+FEFF</code>，而 Go 的 <code>strings.TrimSpace</code> 会保留它。把逐字符判断留在 <code>jstext</code> 包内，调用方只需传入完整字符串。<a href="https://tc39.es/ecma262/multipage/text-processing.html#sec-trimstring">ECMAScript trim 规则</a> · <a href="https://go.dev/src/strings/strings.go">Go strings 实现</a></p><details class="code-file" open><summary><span class="file-mode">新增文件</span><span class="file-path">jstext/trim.go</span></summary><div class="code-toolbar"><button type="button" data-copy="js-trim-go" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="js-trim-go" data-file="jstext/trim.go">// Package jstext 提供与 JavaScript 字符串行为一致的文本处理函数.
+package jstext
+
+import (
+	&quot;strings&quot;
+	&quot;unicode&quot;
+)
+
+// TrimSpace 按 JavaScript String.prototype.trim 的规则移除字符串两端的空白和换行.
+func TrimSpace(s string) string {
+	return strings.TrimFunc(s, isTrimSpace)
+}
+
+// isTrimSpace 判断字符是否属于 JavaScript trim 使用的空白或换行集合.
+func isTrimSpace(r rune) bool {
+	switch r {
+	case &#x27;\t&#x27;, &#x27;\n&#x27;, &#x27;\v&#x27;, &#x27;\f&#x27;, &#x27;\r&#x27;, &#x27;\u2028&#x27;, &#x27;\u2029&#x27;, &#x27;\uFEFF&#x27;:
+		return true
+	default:
+		return unicode.Is(unicode.Zs, r)
+	}
+}</code></pre></details><h3>书名在 JSON 解码时调用公共函数</h3><p><code>Title.UnmarshalJSON()</code> 负责解码书名并调用 <code>jstext.TrimSpace</code>。随后 Gin 执行书名字段的 <code>required,max=20</code> 校验。因此，20 个汉字前后各有一个空格时仍能保存，单个表情也只占一个码点。</p><details class="code-file" open><summary><span class="file-mode">新增文件</span><span class="file-path">param/req/v1/book/create.go</span></summary><div class="code-toolbar"><button type="button" data-copy="dto" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="dto" data-file="param/req/v1/book/create.go">package book
+
+import (
+	&quot;encoding/json&quot;
+
+	&quot;SolarNotesAdminAPI/jstext&quot;
+)
+
+// CreateReq 定义创建书籍请求的外层对象.
+type CreateReq struct {
+	Book *CreateBookReq `json:&quot;book&quot; binding:&quot;required&quot;` // Book 是待创建的书籍.
+}
+
+// CreateBookReq 定义表单提交的书籍字段.
+type CreateBookReq struct {
+	Title         Title            `json:&quot;title&quot; binding:&quot;required,max=20&quot;`                        // Title 在绑定时去除首尾空白.
+	Sort          *int32           `json:&quot;sort&quot; binding:&quot;required,gte=0&quot;`                          // Sort 为非负整数, 仅 hidden 允许 0.
+	DisplayStatus string           `json:&quot;display_status&quot; binding:&quot;required,oneof=visible hidden&quot;` // DisplayStatus 是显示状态.
+	Planet        *CreatePlanetRef `json:&quot;planet&quot; binding:&quot;required&quot;`                              // Planet 仅引用已创建天体的 ID.
+}
+
+// CreatePlanetRef 定义书籍所属天体.
+type CreatePlanetRef struct {
+	ID int64 `json:&quot;id,string&quot; binding:&quot;gt=0&quot;` // ID 从 JSON 字符串解码为正 int64.
+}
+
+// Title 是已去除首尾空白的书名, max 校验针对处理后的值.
+type Title string
+
+// UnmarshalJSON 在 Gin 执行 binding 校验前, 按页面 trim 规则处理书名.
+func (t *Title) UnmarshalJSON(data []byte) error {
+	var value string
+	if err := json.Unmarshal(data, &amp;value); err != nil {
+		return err
+	}
+	*t = Title(jstext.TrimSpace(value))
+	return nil
+}</code></pre></details><h3>在 Gin 绑定时检查可见书籍的排序值</h3><p>在已有的 <code>validation.Register()</code> 中为 <code>CreateBookReq</code> 注册结构体级校验，使它可以同时读取 <code>DisplayStatus</code> 和 <code>Sort</code>。排序为 0 且状态为可见时，<code>ShouldBindJSON()</code> 会返回带有 <code>visible_sort_gt_zero</code> 标签的校验错误；控制器沿用现有 <code>ValidateError</code> 分支返回 <code>10101</code>，请求在访问数据库之前结束。启动流程已经调用 <code>validation.Register()</code>。</p><details class="code-file" open><summary><span class="file-mode">修改现有文件</span><span class="file-path">validation/validation.go</span></summary><div class="code-toolbar"><button type="button" data-copy="validation-go" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="validation-go" data-file="validation/validation.go">package validation
+
+import (
+	&quot;errors&quot;
+	&quot;reflect&quot;
+	&quot;strings&quot;
+
+	reqBook &quot;SolarNotesAdminAPI/param/req/v1/book&quot;
+
+	&quot;github.com/gin-gonic/gin/binding&quot;
+	&quot;github.com/go-playground/validator/v10&quot;
+)
+
+// Register 本函数用于注册自定义验证器
+func Register() error {
+	if binding.Validator == nil {
+		return errors.New(&quot;gin 参数校验器未启用&quot;)
+	}
+
+	v, ok := binding.Validator.Engine().(*validator.Validate)
+	if !ok || v == nil {
+		return errors.New(&quot;无法获取 Gin 默认参数校验器&quot;)
+	}
+
+	if err := v.RegisterValidation(&quot;notblank&quot;, notBlank); err != nil {
+		return err
+	}
+	v.RegisterStructValidation(validateCreateBookSort, reqBook.CreateBookReq{})
+	return nil
+}
+
+// notBlank 本函数用于检查给定字符串是否至少包含一个非空白字符,非字符串字段不通过校验
+func notBlank(field validator.FieldLevel) bool {
+	value := field.Field()
+	if value.Kind() != reflect.String {
+		return false
+	}
+	return strings.TrimSpace(value.String()) != &quot;&quot;
+}
+
+// validateCreateBookSort 检查可见书籍的排序值. 缺失和负数由 Sort 的字段规则报告.
+func validateCreateBookSort(sl validator.StructLevel) {
+	book := sl.Current().Interface().(reqBook.CreateBookReq)
+	if book.Sort != nil &amp;&amp; book.DisplayStatus == &quot;visible&quot; &amp;&amp; *book.Sort == 0 {
+		sl.ReportError(*book.Sort, &quot;Sort&quot;, &quot;Sort&quot;, &quot;visible_sort_gt_zero&quot;, &quot;&quot;)
+	}
+}</code></pre></details></section><section id="model" aria-labelledby="model-title"><h2 id="model-title">在同一事务内关联天体并写入书籍</h2><p>库中 <code>book.planet_id</code> 与 <code>planet.id</code> 通过 ID 关联，目前没有数据库外键。在事务里按主键对天体行执行 <code>SELECT ... FOR SHARE</code>，再通过同一事务插入书籍，可使其他事务对这行天体的删除等待本次提交或回滚。未来实现天体删除时，还需要为已有关联书籍定义删除规则。<a href="https://dev.mysql.com/doc/refman/8.0/en/innodb-locking-reads.html">MySQL 锁定读取</a> · <a href="https://gorm.io/docs/transactions.html">GORM 事务</a></p>
+<p>直接由唯一索引裁决并发写入。项目目前保留 MySQL 驱动的原始错误；遇到 <code>1062</code> 时，在当前事务按 <code>(planet_id, sort)</code> 执行锁定读取。如果这个组合存在，才提示排序占用。如果组合仍空闲，可能是雪花主键碰撞，应沿数据库错误路径返回。事务内所有查询使用 <code>tx</code>。<code>PlanetNotFoundErr</code> 复用现有 <code>model/planet.go</code> 的定义。</p><details class="code-file" open><summary><span class="file-mode">完整文件</span><span class="file-path">model/book.go</span></summary><div class="code-toolbar"><button type="button" data-copy="model-go" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="model-go" data-file="model/book.go">package model
+
+import (
+	&quot;SolarNotesAdminAPI/db&quot;
+	&quot;context&quot;
+	&quot;errors&quot;
+
+	&quot;github.com/go-sql-driver/mysql&quot;
+	&quot;gorm.io/gorm&quot;
+	&quot;gorm.io/gorm/clause&quot;
+)
+
+// BookSortOccupiedErr 本错误表示同一天体下的书籍排序值已被其他记录占用
+var BookSortOccupiedErr = errors.New(&quot;book sort is occupied&quot;)
+
+// Book 本结构体用于映射 book 表,只包含本次创建书籍所需的字段.
+type Book struct {
+	ID            int64   `gorm:&quot;column:id;primaryKey;autoIncrement:false&quot;` // ID 书籍ID
+	PlanetID      int64   `gorm:&quot;column:planet_id&quot;`                         // PlanetID 书籍所属天体的 ID
+	Title         string  `gorm:&quot;column:title&quot;`                             // Title 书籍标题
+	Sort          int32   `gorm:&quot;column:sort&quot;`                              // Sort 书籍在所属天体下的排序值
+	DisplayStatus string  `gorm:&quot;column:display_status&quot;`                    // DisplayStatus 书籍的展示状态
+	Planet        *Planet `gorm:&quot;-&quot;`                                        // Planet 保存创建成功时读取的所属天体
+}
+
+// Insert 本方法用于在事务中确认关联天体存在,并插入接收者表示的书籍记录
+// (事务提交成功才返回 nil,查询/插入/提交错误均向调用方传播)
+func (b *Book) Insert(ctx context.Context) error {
+	if b == nil {
+		return errors.New(&quot;nil book model&quot;)
+	}
+
+	if ctx == nil {
+		return errors.New(&quot;nil book insert context&quot;)
+	}
+
+	if db.DB == nil {
+		return errors.New(&quot;database is not initialized&quot;)
+	}
+
+	if b.ID &lt;= 0 {
+		return errors.New(&quot;book ID must be positive&quot;)
+	}
+
+	if b.PlanetID &lt;= 0 {
+		return errors.New(&quot;book planet ID must be positive&quot;)
+	}
+
+	// 先在副本上执行事务, 提交成功后再向调用方公开查询结果.
+	record := *b
+	if err := db.DB.WithContext(ctx).Transaction(record.insertWithPlanet); err != nil {
+		return err
+	}
+	*b = record
+	return nil
+}
+
+// insertWithPlanet 本函数用于在 Insert 方法中使用的命名事务回调,全部数据库操作共用同一事务
+// (关联天体的共享锁持有至事务结束,防止检查通过后天体在插入期间被删除)
+func (b *Book) insertWithPlanet(tx *gorm.DB) error {
+	if b == nil {
+		return errors.New(&quot;nil book model&quot;)
+	}
+
+	if tx == nil {
+		return errors.New(&quot;nil book insert transaction&quot;)
+	}
+
+	planet := &amp;Planet{}
+
+	err := tx.Select(&quot;id&quot;, &quot;name&quot;, &quot;title&quot;, &quot;intro&quot;).
+		Clauses(clause.Locking{
+			Strength: &quot;SHARE&quot;,
+		}).
+		Where(&quot;id = ?&quot;, b.PlanetID).
+		Take(planet).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return PlanetNotFoundErr
+	}
+
+	if err != nil {
+		return err
+	}
+
+	result := tx.Create(b)
+	err = result.Error
+	if err != nil {
+		// 1062 也可能来自主键冲突,不能直接解释为排序值已被占用
+		var mysqlErr *mysql.MySQLError
+		if !errors.As(err, &amp;mysqlErr) || mysqlErr.Number != 1062 {
+			return err
+		}
+
+		// 在同一事务内执行当前读,确认所属天体与排序值的组合是否已存在
+		// 使用新的记录接收结果,避免接收者的 ID 意外参与查询条件
+		occupied := &amp;Book{}
+		findErr := tx.Select(&quot;id&quot;).
+			Clauses(clause.Locking{
+				Strength: &quot;SHARE&quot;,
+			}).
+			Where(&quot;planet_id = ? AND sort = ?&quot;, b.PlanetID, b.Sort).
+			Take(occupied).Error
+		if findErr == nil {
+			return errors.Join(BookSortOccupiedErr, err)
+		}
+
+		if errors.Is(findErr, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		// 复查失败时同时保留原始插入错误与查询错误,便于排查.
+		return errors.Join(err, findErr)
+	}
+
+	if result.RowsAffected != 1 {
+		return errors.New(&quot;book insert did not affect exactly one row&quot;)
+	}
+
+	b.Planet = planet
+	return nil
+}</code></pre></details><p>模型沿用现有单数表名配置，映射到 <code>book</code> 表。天体的加锁查询一次读出 <code>id</code>、<code>name</code>、<code>title</code> 和 <code>intro</code>。<code>model.Book.Planet</code> 保存这份快照，<code>gorm:&quot;-&quot;</code> 告诉 GORM 在读写书籍表时忽略该字段。<code>Insert()</code> 在副本上执行事务，提交成功后才把结果赋给模型接收者，业务层可以直接复用查询结果。当前创建只新增一行书籍，<code>catalogue</code> 根节点的初始化留给目录功能。</p></section><section id="biz" aria-labelledby="biz-title"><h2 id="biz-title">业务入口与错误分类</h2><p>新增两个业务错误，供控制器使用 <code>errors.Is</code> 匹配。模型错误描述数据库层的判断，业务错误携带管理员可以读懂的提示；其他数据库错误保留底层原因，交给项目已有的 <code>DatabaseError</code>。</p><details class="code-file"><summary><span class="file-mode">新增文件</span><span class="file-path">sys_error/book_error.go</span></summary><div class="code-toolbar"><button type="button" data-copy="errors" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="errors" data-file="sys_error/book_error.go">package sys_error
+
+import &quot;errors&quot;
+
+var (
+	// BookPlanetNotFoundErr 表示所选天体已不存在.
+	BookPlanetNotFoundErr = errors.New(&quot;所选天体不存在,请刷新天体选项&quot;)
+	// BookSortOccupiedErr 表示该天体下已有书籍使用了请求的排序值.
+	BookSortOccupiedErr = errors.New(&quot;该天体下的排序值已被占用&quot;)
+)</code></pre></details><p><code>biz.Book.Create()</code> 直接接收完整的请求对象。路由正常进入时，启动流程已初始化雪花发号器，Gin 已完成字段校验。只有 <code>record.Insert(ctx)</code> 成功后，才调用 <code>b.fillByORM(ctx, record)</code>。该方法统一填充书籍 ID、标题、排序和显示状态，并复用 <code>Planet.fillByORM()</code> 填充所属天体，将 <code>Exist</code> 设为 <code>true</code>。<code>Create()</code> 仍只返回 <code>error</code>；如果创建失败，原有业务实例保留调用前的值。</p><details class="code-file" open><summary><span class="file-mode">完整文件</span><span class="file-path">biz/book.go</span></summary><div class="code-toolbar"><button type="button" data-copy="business" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="business" data-file="biz/book.go">package biz
+
+import (
+	&quot;context&quot;
+	&quot;errors&quot;
+
+	&quot;SolarNotesAdminAPI/model&quot;
+	reqBook &quot;SolarNotesAdminAPI/param/req/v1/book&quot;
+	&quot;SolarNotesAdminAPI/snowflake&quot;
+	&quot;SolarNotesAdminAPI/sys_error&quot;
+)
+
+// Book 承载书籍创建业务.
+type Book struct {
+	ID            int64   `json:&quot;id&quot;`             // ID 书籍ID
+	Title         string  `json:&quot;title&quot;`          // Title 书籍标题
+	Sort          int32   `json:&quot;sort&quot;`           // Sort 书籍在所属天体下的排序值
+	DisplayStatus string  `json:&quot;display_status&quot;` // DisplayStatus 书籍的展示状态
+	Planet        *Planet `json:&quot;planet&quot;`         // Planet 书籍所属天体
+}
+
+// Create 本函数用于创建书籍
+func (b *Book) Create(ctx context.Context, req *reqBook.CreateReq) error {
+	if b == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New(&quot;nil book entity&quot;)}
+	}
+
+	if ctx == nil || req == nil || req.Book == nil || req.Book.Planet == nil || req.Book.Sort == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New(&quot;missing book creation arguments&quot;)}
+	}
+
+	input := req.Book
+	record := &amp;model.Book{
+		ID:            snowflake.Next(),
+		PlanetID:      input.Planet.ID,
+		Title:         string(input.Title),
+		Sort:          *input.Sort,
+		DisplayStatus: input.DisplayStatus,
+	}
+
+	err := record.Insert(ctx)
+	if err != nil {
+		switch {
+		case errors.Is(err, model.PlanetNotFoundErr):
+			return sys_error.BookPlanetNotFoundErr
+		case errors.Is(err, model.BookSortOccupiedErr):
+			return sys_error.BookSortOccupiedErr
+		default:
+			return &amp;sys_error.DatabaseError{Cause: err}
+		}
+	}
+
+	b.fillByORM(ctx, record)
+	return nil
+}
+
+// fillByORM 本函数用于将书籍记录及其已加载的所属天体填入业务实体
+func (b *Book) fillByORM(ctx context.Context, record *model.Book) {
+	planet := &amp;Planet{Exist: true}
+	planet.fillByORM(ctx, record.Planet)
+
+	*b = Book{
+		ID:            record.ID,
+		Title:         record.Title,
+		Sort:          record.Sort,
+		DisplayStatus: record.DisplayStatus,
+		Planet:        planet,
+	}
+}</code></pre></details></section><section id="http" aria-labelledby="http-title"><h2 id="http-title">组装响应并注册受保护的路由</h2><p>下列两个业务码是本方案新增的约定。<code>20102</code> 归入天体错误组，<code>20201</code> 用于书籍排序冲突。书籍响应码和 <code>RespBody</code> 的响应方法都写入现有的 <code>resp_body/resp_body.go</code>。下方三个片段依次给出导入位置、常量位置和方法位置。两个方法都调用已有的 <code>failure()</code>，错误响应的 <code>data</code> 为 <code>{}</code>。</p><div class="table-wrap"><table><thead><tr><th scope="col">业务码</th><th scope="col">触发条件</th><th scope="col">调用方处理</th></tr></thead><tbody><tr><td><code>200</code></td><td>插入并提交成功。</td><td>提示创建成功。</td></tr><tr><td><code>10101</code></td><td>JSON 类型、字段、状态与排序组合或请求体大小校验失败。</td><td>修正对应输入。</td></tr><tr><td><code>20102</code> · 新增</td><td>天体 ID 格式有效，但目标行不存在。</td><td>刷新天体选项，重新选择。</td></tr><tr><td><code>20201</code> · 新增</td><td>同一天体下已有书籍占用本次排序值。</td><td>保留表单，更换排序值。</td></tr><tr><td><code>20003</code> / <code>20004</code></td><td>令牌过期，或缺失、无效、已撤销。</td><td>沿用现有登录失效处理。</td></tr><tr><td><code>10201</code> / <code>500</code></td><td>数据库故障或内部调用异常。</td><td>显示统一错误提示。</td></tr></tbody></table></div><details class="code-file" open><summary><span class="file-mode">追加导入</span><span class="file-path">resp_body/resp_body.go · 放在 package resp_body 之后</span></summary><div class="code-toolbar"><button type="button" data-copy="resp-import" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="resp-import" data-file="resp_body/resp_body.go">import &quot;SolarNotesAdminAPI/sys_error&quot;</code></pre></details>
+<details class="code-file" open><summary><span class="file-mode">追加常量</span><span class="file-path">resp_body/resp_body.go · 放在现有 const 分组的 PlanetExistCode 之后</span></summary><div class="code-toolbar"><button type="button" data-copy="resp-codes" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="resp-codes" data-file="resp_body/resp_body.go">	BookPlanetNotFoundCode = 20102 // BookPlanetNotFoundCode 表示天体引用失效.
+	BookSortOccupiedCode   = 20201 // BookSortOccupiedCode 表示某天体下的书籍排序冲突.</code></pre></details>
+<details class="code-file" open><summary><span class="file-mode">追加方法</span><span class="file-path">resp_body/resp_body.go · 放在文件末尾的 PlanetExistError() 之后</span></summary><div class="code-toolbar"><button type="button" data-copy="resp-go" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="resp-go" data-file="resp_body/resp_body.go">// BookPlanetNotFoundError 提示用户重新选择天体.
+func (r *RespBody) BookPlanetNotFoundError() {
+	r.failure(BookPlanetNotFoundCode, sys_error.BookPlanetNotFoundErr.Error())
+}
+
+// BookSortOccupiedError 提示用户在当前天体下更换排序值.
+func (r *RespBody) BookSortOccupiedError() {
+	r.failure(BookSortOccupiedCode, sys_error.BookSortOccupiedErr.Error())
+}</code></pre></details><p><code>bookBiz</code> 的字段已在创建成功时填充。按创建接口约定，控制器成功时仍直接调用 <code>Success(map[string]any{})</code>；传入空 map 即可输出用户约定的空 JSON 对象。</p><details class="code-file" open><summary><span class="file-mode">新增文件</span><span class="file-path">controller/v1/book/book.go</span></summary><div class="code-toolbar"><button type="button" data-copy="controller" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="controller" data-file="controller/v1/book/book.go">package book
+
+import (
+	&quot;errors&quot;
+	&quot;net/http&quot;
+
+	&quot;SolarNotesAdminAPI/biz&quot;
+	reqBook &quot;SolarNotesAdminAPI/param/req/v1/book&quot;
+	&quot;SolarNotesAdminAPI/resp_body&quot;
+	&quot;SolarNotesAdminAPI/sys_error&quot;
+
+	&quot;github.com/gin-gonic/gin&quot;
+)
+
+// Create 绑定创建书籍请求, 调用业务层并写入统一响应.
+func Create(c *gin.Context) {
+	req := &amp;reqBook.CreateReq{}
+	respBody := &amp;resp_body.RespBody{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		respBody.ValidateError(err)
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	bookBiz := &amp;biz.Book{}
+	if err := bookBiz.Create(c.Request.Context(), req); err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, sys_error.BookPlanetNotFoundErr):
+			respBody.BookPlanetNotFoundError()
+		case errors.Is(err, sys_error.BookSortOccupiedErr):
+			respBody.BookSortOccupiedError()
+		case errors.As(err, &amp;dbErr):
+			respBody.DBError(dbErr)
+		default:
+			respBody.InternalError(err)
+		}
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	respBody.Success(map[string]any{})
+	c.JSON(http.StatusOK, respBody)
+}</code></pre></details><p>在 <code>main.go</code> 的现有 import 分组中添加控制器包，再在 <code>newRouter()</code> 的 <code>v1</code> 路由组内添加一行。该路由继承全局请求体上限和管理员鉴权。免鉴权集合仍只包含登录路由。</p><details class="code-file" open><summary><span class="file-mode">追加一行</span><span class="file-path">main.go · import 分组内</span></summary><div class="code-toolbar"><button type="button" data-copy="import-go" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="import-go">&quot;SolarNotesAdminAPI/controller/v1/book&quot;</code></pre></details><details class="code-file" open><summary><span class="file-mode">追加一行</span><span class="file-path">main.go · v1 路由组内</span></summary><div class="code-toolbar"><button type="button" data-copy="route-go" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="route-go">v1.POST(&quot;/book/create&quot;, book.Create)</code></pre></details></section><section id="check" aria-labelledby="check-title"><h2 id="check-title">联调与验收</h2><p>当前表单的输入框和字段规则仍使用固定的 <code>BOOK_SORT_MIN</code>。接入新规则时，将两处下限同步设为可见时 1、隐藏时 0；切换显示状态后重新校验排序字段，提醒用户修正已有的 0。使用当前 <code>request</code> 实例会自动添加 Bearer 令牌并解包成功响应。下列片段展示从已经校验的表单构造请求的方式。页面拿到的是 <code>{}</code>；以 Promise 成功作为创建成功的信号。<a href="../../SolarNotesAdmin/src/utils/request.js">前端请求封装</a></p><details class="code-file"><summary><span class="file-mode">JavaScript</span><span class="file-path">表单校验通过后的请求映射</span></summary><div class="code-toolbar"><button type="button" data-copy="client" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="client">await request.post(&#x27;/v1/book/create&#x27;, {
+    book: {
+        title: addForm.title.trim(),
+        sort: addForm.sort,
+        display_status: addForm.display_status,
+        planet: { id: addForm.planet_id },
+    },
+})</code></pre></details><p>联调时选用测试库中实际存在的天体，以及尚未占用的排序值。每次失败后核对书籍行数，确认请求没有留下部分写入。</p><div class="table-wrap"><table><thead><tr><th scope="col">验证项</th><th scope="col">输入或操作</th><th scope="col">预期结果</th></tr></thead><tbody><tr><td>正常创建</td><td>有效 ID、书名、排序和状态。</td><td><code>200</code>，响应精确包含 <code>&quot;data&quot;: {}</code>，库中增加一行。</td></tr><tr><td>书名边界</td><td>20 个表情加首尾空格；21 个表情；纯空白。</td><td>第一项成功并以修整后的值入库，后两项为 <code>10101</code>。</td></tr><tr><td>业务实体回填</td><td>调用 <code>bookBiz.Create(ctx, req)</code>，成功后检查同一个 <code>bookBiz</code> 实例。</td><td>书籍 ID 与已写入的行一致，所属天体的四个字段完整且 <code>Exist</code> 为 <code>true</code>。再次用该实例创建失败时，原值保留。</td></tr><tr><td>隐藏书籍排序</td><td><code>hidden</code> 分别提交 -1、0、1 和 2147483647。</td><td>-1 返回 <code>10101</code>；其余值空闲时均成功。</td></tr><tr><td>可见书籍排序</td><td><code>visible</code> 分别提交 -1、0、1 和 2147483647。</td><td>-1 和 0 均返回 <code>10101</code>；两个正数空闲时均成功。</td></tr><tr><td>排序类型与上限</td><td>缺失、<code>null</code>、<code>1.5</code>、<code>&quot;1&quot;</code> 或 2147483648。</td><td>两种状态均返回 <code>10101</code>。</td></tr><tr><td>隐藏书占用 0</td><td>同一天体已有隐藏书使用 0，另一隐藏书也提交 0。</td><td>格式有效，但唯一索引已占用，返回 <code>20201</code>。换一个尚未占用 0 的天体即可成功。</td></tr><tr><td>天体 ID</td><td>存在且大于 <code>2^53</code> 的字符串 ID；裸数字；<code>&quot;0&quot;</code>；溢出字符串；合法但不存在的正 ID。</td><td>第一项精确写入，类型、值或范围错误为 <code>10101</code>，最后一项为 <code>20102</code>。</td></tr><tr><td>对象与枚举</td><td>缺失 book 或 planet；<code>display_status</code> 缺失、传 <code>null</code> 或 <code>&quot;Visible&quot;</code>。</td><td>均返回 <code>10101</code>。</td></tr><tr><td>联合唯一性</td><td>同天体同排序并发提交；不同天体同排序；同名书使用不同排序。</td><td>同组请求最多写入一行；再次占用返回 <code>20201</code>。后两种情况可成功。</td></tr><tr><td>事务与鉴权</td><td>天体不存在，或使用缺失、过期的 token。</td><td>天体不存在时回滚；鉴权失败由中间件返回相应业务码。书籍数均不变。</td></tr></tbody></table></div><p>验证持久化时，可在测试库按天体 ID 和排序值读取结果。这里的 ID 和排序值需要替换为实际测试值。</p><details class="code-file"><summary><span class="file-mode">只读 SQL</span><span class="file-path">检查书籍行</span></summary><div class="code-toolbar"><button type="button" data-copy="sql" hidden>复制代码</button><span class="copy-feedback" role="status" aria-live="polite"></span></div><pre><code id="sql">SELECT id, planet_id, title, sort, display_status, created_at, updated_at
+FROM book
+WHERE planet_id = 2000001 AND sort = 1;</code></pre></details></section><footer>SolarNotesAdminAPI · 创建书籍实现参考 · 2026-11-19</footer></main></div><script>
+"use strict";
+(() => {
+  const files = [...document.querySelectorAll("details.code-file")];
+  const expand = document.getElementById("expand-all");
+  const collapse = document.getElementById("collapse-all");
+  expand.hidden = false;
+  collapse.hidden = false;
+  expand.addEventListener("click", () => files.forEach(file => { file.open = true; }));
+  collapse.addEventListener("click", () => files.forEach(file => { file.open = false; }));
+
+  async function copyText(value) {
+    if (navigator.clipboard && window.isSecureContext) {
+      try { await navigator.clipboard.writeText(value); return true; } catch (_) { /* 尝试备用方式 */ }
+    }
+    const field = document.createElement("textarea");
+    field.value = value;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.left = "-9999px";
+    document.body.append(field);
+    field.select();
+    let copied = false;
+    try { copied = document.execCommand("copy"); } catch (_) { copied = false; }
+    field.remove();
+    return copied;
+  }
+
+  document.querySelectorAll("[data-copy]").forEach(button => {
+    const code = document.getElementById(button.dataset.copy);
+    const feedback = button.nextElementSibling;
+    if (!code) return;
+    button.hidden = false;
+    button.addEventListener("click", async () => {
+      const ok = await copyText(code.textContent);
+      feedback.textContent = ok ? "已复制" : "复制失败,请手动选择代码";
+      window.setTimeout(() => { feedback.textContent = ""; }, 2500);
+    });
+  });
+})();
+</script></body></html>
