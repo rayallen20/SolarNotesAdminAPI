@@ -21,7 +21,7 @@ type Book struct {
 	ID            int64   `gorm:"column:id;primaryKey;autoIncrement:false"` // ID 书籍ID
 	PlanetID      int64   `gorm:"column:planet_id"`                         // PlanetID 书籍所属天体的 ID
 	Title         string  `gorm:"column:title"`                             // Title 书籍标题
-	Sort          int32   `gorm:"column:sort"`                              // Sort 书籍在所属天体下的排序值
+	Sort          uint32  `gorm:"column:sort"`                              // Sort 书籍在所属天体下的排序值
 	DisplayStatus string  `gorm:"column:display_status"`                    // DisplayStatus 书籍的展示状态
 	Planet        *Planet `gorm:"-"`                                        // Planet 保存创建成功时读取的所属天体
 }

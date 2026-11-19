@@ -15,7 +15,7 @@ import (
 type Book struct {
 	ID            int64   `json:"id"`             // ID 书籍ID
 	Title         string  `json:"title"`          // Title 书籍标题
-	Sort          int32   `json:"sort"`           // Sort 书籍在所属天体下的排序值
+	Sort          uint32  `json:"sort"`           // Sort 书籍在所属天体下的排序值
 	DisplayStatus string  `json:"display_status"` // DisplayStatus 书籍的展示状态
 	Planet        *Planet `json:"planet"`         // Planet 书籍所属天体
 }

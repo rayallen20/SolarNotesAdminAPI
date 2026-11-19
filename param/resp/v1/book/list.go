@@ -15,7 +15,7 @@ type ListResp struct {
 type ListBookResp struct {
 	ID            string                     `json:"id"`             // ID 书籍 ID 的十进制字符串(避免前端整数精度丢失)
 	Title         string                     `json:"title"`          // Title 书籍标题
-	Sort          int32                      `json:"sort"`           // Sort 书籍在所属天体下的排序值
+	Sort          uint32                     `json:"sort"`           // Sort 书籍在所属天体下的排序值
 	DisplayStatus string                     `json:"display_status"` // DisplayStatus 书籍的显示状态, 为 visible 或 hidden
 	Planet        *respPlanet.ListPlanetResp `json:"planet"`         // Planet 所属天体, 包含字符串 ID, 名称, 标题和简介
 }
