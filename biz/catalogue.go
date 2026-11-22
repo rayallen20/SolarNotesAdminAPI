@@ -97,6 +97,8 @@ func (c *Catalogue) Reorder(ctx context.Context, req *reqCatalogue.ReorderReq) e
 		return fmt.Errorf("%w: parent_id must reference a folder", sys_error.CatalogueOrderInvalidErr)
 	case errors.Is(err, model.CatalogueOrderChangedErr), errors.Is(err, sys_error.CatalogueOrderChangedErr):
 		return sys_error.CatalogueOrderChangedErr
+	case errors.Is(err, model.CatalogueCycleErr):
+		return &sys_error.InternalError{Cause: err}
 	default:
 		return &sys_error.DatabaseError{Cause: err}
 	}

@@ -200,7 +200,13 @@ func (c *Catalogue) writeChildOrder(tx *gorm.DB, rows []Catalogue, changes map[i
 			continue
 		}
 		if row.Sort != nil && target.Sort == nil {
-			continue // 该项在释放旧号时已落到最终的 NULL 和 hidden.
+			// 该节点已在释放旧序号时写为 NULL / hidden, 按锁定时的状态决定是否隐藏后代.
+			if row.DisplayStatus == enum.DisplayVisible {
+				if err := row.hideDescendants(tx); err != nil {
+					return err
+				}
+			}
+			continue
 		}
 		if err := c.updateChildOrder(tx, row.ID, target.Sort, target.DisplayStatus); err != nil {
 			return err

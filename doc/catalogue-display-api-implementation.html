@@ -89,7 +89,7 @@
 <tr><td><code>visible → visible</code></td><td>排序校验通过后返回成功。</td><td>跳过遍历和写入。</td></tr>
 </tbody></table></div>
 <p><strong>显示的前提。</strong>根文件夹使用 <code>parent_id=0</code> 和 <code>sort=0</code>；普通文件夹和文件须有正数序号。请求显示 <code>sort=NULL</code> 的普通节点时返回 <code>20303</code>。隐藏允许待排序节点保留 <code>NULL</code>，服务端也会校验直接发送的请求。</p>
-<p><strong>级联的边界。</strong>隐藏根节点会覆盖这本书根下的整棵树；隐藏叶节点只影响它自己。操作只写指定范围内的 <code>catalogue.display_status</code>，所有序号、祖先、兄弟分支、其他书的节点和书籍本身的显隐均保留。排序接口仍按自己的规则更新直接子项，例如将待排项排入阅读顺序时可以将它设为显示。<a href="catalogue-reorder-api-implementation.html#transitions">排序时的状态转换</a>。</p>
+<p><strong>级联的边界。</strong>隐藏根节点会覆盖这本书根下的整棵树；隐藏叶节点只影响它自己。操作只写指定范围内的 <code>catalogue.display_status</code>，所有序号、祖先、兄弟分支、其他书的节点和书籍本身的显隐均保留。排序接口将可见的已排节点移回待排区时，同样隐藏其全部后代。重新排入时只显示该节点。<a href="catalogue-reorder-api-implementation.html#transitions">排序时的状态转换</a>。</p>
 </section>
 
 <section id="input"><h2>复用现有校验与响应包装器</h2>
@@ -371,7 +371,7 @@ func Display(c *gin.Context) {
 <tr><td>把可见根节点隐藏，再单独显示根；另选一个已排叶节点，依次切换显示和隐藏。</td><td>隐藏根时同书根下的全部节点隐藏；再显示根时仅根显示，根的序号仍为 0。叶节点切换仅影响自己。</td></tr>
 <tr><td>对待排文件或文件夹先请求显示，再请求隐藏。</td><td>依次得到 <code>20303</code> 和 <code>200</code>。最终仍是 <code>NULL / hidden</code>。</td></tr>
 <tr><td>已有同层排序快照。甲先手动隐藏已排节点，乙再用该快照将它移到另一个已排位置。</td><td>两次都成功。节点采用新序号并保留手动隐藏，仅改显隐不会让排序快照失效。</td></tr>
-<tr><td>甲先通过排序将节点移回待排区，乙再请求显示；随后交换两个操作的提交顺序做对照。</td><td>排序先提交时，显示请求看到 <code>NULL</code>，返回 <code>20303</code>。显示先提交时，两次都可成功，最终由排序写为 <code>NULL / hidden</code>。</td></tr>
+<tr><td>对一个可见的已排章节，甲通过排序将其移回待排区，乙请求将其设为显示。分别验证两种提交顺序。</td><td>排序先提交时，显示请求看到 <code>NULL</code>，返回 <code>20303</code>。显示先提交时，两次都成功。两种顺序下，章节最终均为 <code>NULL / hidden</code>，后代随移回待排操作一起隐藏。</td></tr>
 <tr><td>两个管理员为同一个已排节点提交不同的合法目标。</td><td>两个请求均可成功，最终值等于最后提交的目标。可在一个事务持有书籍锁时发起另一个请求，确认它在锁释放后使用最新行。</td></tr>
 <tr><td>并发执行“隐藏可见的第一章”和“显示已排的正文”。</td><td>以取得同一本书写锁的顺序为准。隐藏先提交，随后单独显示的正文可见；显示先提交，随后级联的结果为整章隐藏。</td></tr>
 <tr><td>准备超过 256 个子文件夹，每个都有可见叶节点；再单独测试在较深一层更新时让数据库报错。</td><td>正常提交时所有分支都变为隐藏。数据库更新失败返回 <code>10201</code>，选中节点和先前成功处理的各层恢复到请求前的状态。</td></tr>

@@ -60,7 +60,7 @@
 <nav aria-label="本文目录"><a href="#contract">请求与响应</a><a href="#transitions">排序与显隐</a><a href="#layers">实现位置</a><a href="#input">请求和业务码</a><a href="#biz">业务入口与校验</a><a href="#transaction">加锁与写入</a><a href="#http">控制器与路由</a><a href="#verify">联调与并发验收</a></nav></aside>
 <main><header><div class="endpoint">POST /v1/catalogue/reorder</div>
 <h1>保存一个父目录下的阅读顺序</h1>
-<p>管理员在抽屉内调整直接子项，点击「保存排序」时提交一次写请求。后端核对打开抽屉时的分组，按目标顺序分配序号，并在同一个事务里保存对应的显隐状态。</p>
+<p>管理员在抽屉内调整直接子项，点击「保存排序」时提交一次写请求。后端核对分组并分配序号。若把原本可见的已排目录移回待排区，后端会在同一事务中隐藏该目录和它的全部后代。</p>
 <p><a href="../../SolarNotesAdmin/doc/catalogue-api-design.html#order">前端接口设计 · 第 ④ 项</a> · <a href="../../SolarNotesAdmin/doc/catalogue-management-prototype.html#order-dialog">排序抽屉原型</a> · <a href="catalogue-tree-api-implementation.html#contract">上一步的完整目录树接口</a></p><div class="tools" hidden><button type="button" data-open="true">展开全部示例</button><button type="button" data-open="false">收起全部示例</button></div></header>
 <section id="contract"><h2>从抽屉快照到一次保存</h2>
 <p>用管理员 Bearer 令牌发送 <code>POST /v1/catalogue/reorder</code>，请求体为 <code>application/json</code>。<code>catalogue.parent_id</code> 是当前文件夹本身的雪花 ID。编排顶层章节时传书籍根目录的 ID；根节点用作父项时也有自己的正数 ID。所有 ID 均以十进制字符串提交。</p><details open><summary><small>请求 JSON</small>三个章节原先全部待排，先排入第三章和第一章</summary>
@@ -95,12 +95,12 @@
 <p>收到成功后重取 <code>POST /v1/catalogue/tree</code>，按 ID 恢复当前目录及展开位置。取消、抽屉中的移动和本地预览均可在前端完成。</p></section>
 <section id="transitions"><h2>用锁定时的分组计算显隐</h2>
 <div class="table-wrap"><table><thead><tr><th scope="col">锁定时分组</th><th scope="col">目标分组</th><th scope="col">最终 sort</th><th scope="col">最终 display_status</th></tr></thead><tbody>
-<tr><td>待排</td><td>已排</td><td>目标位置，从 1 开始</td><td><code>visible</code>，原来为隐藏的待排节点也适用。</td></tr>
-<tr><td>已排</td><td>待排</td><td><code>NULL</code></td><td><code>hidden</code>，清除序号与隐藏在同一事务完成。</td></tr>
-<tr><td>已排</td><td>已排</td><td>目标位置，从 1 开始</td><td>保留当前行的最新显隐值，包含手动隐藏。</td></tr>
-<tr><td>待排</td><td>待排</td><td><code>NULL</code></td><td><code>hidden</code>。</td></tr>
+<tr><td>待排</td><td>已排</td><td>目标位置，从 1 开始</td><td>仅当前节点设为 <code>visible</code>，包括待排项在内的所有后代保留各自的显隐。</td></tr>
+<tr><td>已排</td><td>待排</td><td><code>NULL</code></td><td>当前节点设为 <code>hidden</code>。锁定时为 <code>visible</code> 才同步隐藏全部后代；锁定时已为 <code>hidden</code> 则保留后代显隐。</td></tr>
+<tr><td>已排</td><td>已排</td><td>目标位置，从 1 开始</td><td>保留当前行的最新显隐值，包含手动隐藏。换位时的临时状态不触发后代更新。</td></tr>
+<tr><td>待排</td><td>待排</td><td><code>NULL</code></td><td>当前节点为 <code>hidden</code>，后代保留各自的状态。</td></tr>
 </tbody></table></div>
-<p>例如上一次已排为「第三章、第一章」，第一章随后被手动隐藏，第二章仍待排。这次把目标设为「第一章、第二章」：第一章得到 <code>1 / hidden</code>，第二章得到 <code>2 / visible</code>，第三章得到 <code>null / hidden</code>。抽屉里把第一章移出又移回，结果仍按「已排 → 已排」处理。</p><details><summary><small>请求 JSON</small>第二次保存：同时移出第三章、加入第二章</summary>
+<p>例如上一次已排为「第三章、第一章」，第三章仍可见，第一章随后被手动隐藏，第二章仍待排。这次把目标设为「第一章、第二章」，第一章得到 <code>1 / hidden</code>，第二章得到 <code>2 / visible</code>，两章后代都保留各自的状态。第三章得到 <code>null / hidden</code>，章内所有层级同步隐藏，即使中间有已经隐藏的目录。抽屉里把第一章移出又移回，结果仍按「已排 → 已排」处理。</p><details><summary><small>请求 JSON</small>第二次保存：同时移出第三章、加入第二章</summary>
 <pre><code id="order-again">{
   "catalogue": {
     "parent_id": "2123684178040987648",
@@ -124,9 +124,9 @@
     }
   }
 }</code></pre></details>
-<p>每个父目录独立编号。排序值使用 <code>*uint32</code> 对应 MySQL 可空的 <code>INT UNSIGNED</code>；被编排的子节点最终只有 <code>1..N</code> 或 <code>NULL</code>。父节点、书籍和孙节点都不在本次写集合内，根节点自身的 <code>sort = 0</code> 也得到保留。</p></section>
+<p>每个父目录独立编号。排序值使用 <code>*uint32</code> 对应 MySQL 可空的 <code>INT UNSIGNED</code>。只给本次编排的直接子项设置 <code>1..N</code> 或 <code>NULL</code>。级联只写被移回节点在本书内的后代的 <code>display_status</code>，保留后代序号、父目录和书籍本身的状态。</p></section>
 <section id="layers"><h2>沿用现有目录业务实体</h2>
-<div class="flow"><p><strong>业务入口</strong>　<code>(*biz.Catalogue).Reorder(ctx, req) error</code></p><p><strong>模型入口</strong>　<code>(*model.Catalogue).ReorderChildren(ctx, parentID, plan) error</code></p></div><p><code>biz.Catalogue</code> 与 <code>biz.Book</code> 继续独立。树接口读取并组装整本书，本次保存只需要父 ID 和这一层的直接子行。在事务中锁定实际行，再调用业务层的具名方法计算变更计划，避免将锁定前的状态带入写入逻辑。</p><div class="table-wrap"><table><thead><tr><th scope="col">放置位置</th><th scope="col">职责</th></tr></thead><tbody>
+<div class="flow"><p><strong>业务入口</strong>　<code>(*biz.Catalogue).Reorder(ctx, req) error</code></p><p><strong>模型入口</strong>　<code>(*model.Catalogue).ReorderChildren(ctx, parentID, plan) error</code></p></div><p><code>biz.Catalogue</code> 根据已锁定的直接子项与本层分组计算变更计划。请求只需描述这一层，模型在执行计划时自行遍历需要隐藏的子树。</p><div class="table-wrap"><table><thead><tr><th scope="col">放置位置</th><th scope="col">职责</th></tr></thead><tbody>
 <tr><td><code>param/req/v1/catalogue/reorder.go</code></td><td>请求结构、十进制字符串 ID、嵌套字段和数组校验。</td></tr>
 <tr><td><a href="../biz/catalogue.go">biz/catalogue.go</a></td><td>在已有目录实体下追加 <code>Reorder</code> 成员方法，接收完整请求、映射业务错误。</td></tr>
 <tr><td><code>biz/catalogue_reorder.go</code></td><td>校验成员、比对快照、计算最终序号和显隐。复用现有 <code>enum</code> 常量。</td></tr>
@@ -195,7 +195,7 @@ func (r *RespBody) CatalogueOrderChangedError() {
 <tr><td><code>10101</code></td><td>请求格式错误、缺数组、ID 重复、列入父节点或两份成员集合不同。本方案也将存在的 file 用作父项归为参数错误。</td><td>修正请求。</td></tr>
 <tr><td><code>20202 / 20301</code></td><td>已定位的所属书籍不存在 / 父目录节点已不存在。</td><td>刷新书籍选项或重取目录树。</td></tr>
 <tr><td><code>20302</code></td><td>父节点归属在定位后发生变化，或锁定后的实际分组与 expected 不符。</td><td>重读树并让管理员核对最新分组。</td></tr>
-<tr><td><code>10201 / 500</code></td><td>数据库查询、加锁、写入或提交失败 / 内部调用异常。</td><td>失败后读取目录树，核实数据库中的实际状态。</td></tr>
+<tr><td><code>10201 / 500</code></td><td>数据库查询、加锁、写入或提交报错返回 <code>10201</code>。内部调用异常，或遍历后代时发现父子关系成环，返回 <code>500</code>。</td><td>失败后读取目录树，核实数据库中的实际状态。</td></tr>
 <tr><td><code>20003 / 20004</code></td><td>令牌过期 / 缺失、无效或已撤销。</td><td>沿用公共鉴权处理。</td></tr>
 </tbody></table></div>
 <details><summary><small>HTTP 200</small>快照冲突的完整响应</summary>
@@ -237,6 +237,8 @@ func (c *Catalogue) Reorder(ctx context.Context, req *reqCatalogue.ReorderReq) e
 		return fmt.Errorf("%w: parent_id must reference a folder", sys_error.CatalogueOrderInvalidErr)
 	case errors.Is(err, model.CatalogueOrderChangedErr), errors.Is(err, sys_error.CatalogueOrderChangedErr):
 		return sys_error.CatalogueOrderChangedErr
+	case errors.Is(err, model.CatalogueCycleErr):
+		return &amp;sys_error.InternalError{Cause: err}
 	default:
 		return &amp;sys_error.DatabaseError{Cause: err}
 	}
@@ -384,104 +386,18 @@ func equalCatalogueSort(a, b *uint32) bool {
 	return *a == *b
 }</code></pre></details>
 </section>
-<section id="transaction"><h2>锁定同一层，原子保存最终状态</h2>
-<p>业务层和 DAO 共用 <code>model.Catalogue</code>。事务锁定的行保存原状态，业务层按 ID 返回有变更的目录副本。DAO 对照原状态释放旧序号，再从副本中读取 <code>sort</code> 和 <code>display_status</code> 写入这两列。移回待排的节点在释放旧序号时已经写成 <code>NULL / hidden</code>，只需更新一次。</p>
-<ol><li><strong>定位。</strong> 用父目录 ID 查询所属书籍。这个普通读取只用于确定第一把锁的对象。</li><li><strong>复核。</strong> 在同一写事务内，先锁书籍，再按 ID 重新读取并锁定父目录，最后锁定该书该父目录下的全部直接子项。按 <code>book_id</code>、<code>parent_id</code> 限定范围。传入其他父目录或其他书籍的节点，都会在成员校验或事务内的快照比对阶段被拒绝。</li><li><strong>先释放、再分配。</strong> 保留锁定行原来的序号与显隐。释放发生变化且原先非空的旧序号，再写最终的 <code>1..N</code> 和显隐；移回待排的子项最终同时为 <code>NULL / hidden</code>。交换 1、2 时，即使有 <code>uk_book_parent_sort</code> 唯一索引也能完成。临时 NULL 符合 <code>chk_catalogue_sort_by_parent</code> 对非根子节点的约束。</li><li><strong>提交。</strong> 中间任何错误使整批回滚；只有提交成功才返回成功。所有写语句都携带本书、本父和子节点 ID 条件。</li></ol><p class="note">书籍行是同一本书目录写操作的共同锁。后续显隐、导入、删除或移动目录的实现也应遵循「书 → 父目录 → 子项」的顺序；这样能在一次排序事务中稳定地核对成员，并读取其他管理员刚提交的显隐修改。书级串行化涵盖同书的不同父目录，不同书籍可分别操作。</p><p><code>ReorderChildren</code> 开启事务后，通过父目录实例调用私有方法锁定子节点、释放旧序号并写入目标顺序。父目录实例的 <code>BookID</code> 和 <code>ID</code> 共同限定写入范围。</p><details><summary><small>合并后的完整文件</small>model/catalogue.go</summary>
-<pre><code id="model-reorder" data-path="model/catalogue.go" data-mode="replace">package model
-
-import (
-	"context"
-	"database/sql"
-	"errors"
-	"fmt"
-
-	"SolarNotesAdminAPI/db"
-	"SolarNotesAdminAPI/enum"
-
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
-)
-
-var (
-	// CatalogueNotFoundErr 表示父目录不存在或已删除.
-	CatalogueNotFoundErr = errors.New("catalogue not found")
-	// CatalogueParentNotFolderErr 表示请求指定的父节点是文件.
-	CatalogueParentNotFolderErr = errors.New("catalogue parent must be a folder")
-	// CatalogueOrderChangedErr 表示父目录归属或同级排序快照已变化.
-	CatalogueOrderChangedErr = errors.New("catalogue order changed")
-)
-
-// Catalogue 映射 catalogue 表
-type Catalogue struct {
-	ID            int64   `gorm:"column:id;primaryKey;autoIncrement:false"` // ID 目录节点主键
-	BookID        int64   `gorm:"column:book_id"`                           // BookID 所属书籍
-	ParentID      int64   `gorm:"column:parent_id"`                         // ParentID 直接父节点 ID, 根节点为 0
-	Name          string  `gorm:"column:name"`                              // Name 节点名称
-	Intro         string  `gorm:"column:intro"`                             // Intro 节点介绍
-	Type          string  `gorm:"column:type"`                              // Type 节点类型
-	Sort          *uint32 `gorm:"column:sort"`                              // Sort 节点排序(nil 表示待排序)
-	DisplayStatus string  `gorm:"column:display_status"`                    // DisplayStatus 节点显隐状态
-}
-
-// ReadBookTree 在同一个只读快照内,读取给定书籍和该书全部目录行
-func (c *Catalogue) ReadBookTree(ctx context.Context, bookID int64) (*Book, []Catalogue, error) {
-	if c == nil {
-		err := errors.New("model.Catalogue.ReadBookTree: nil receiver")
-		return nil, nil, err
-	}
-
-	if ctx == nil {
-		err := errors.New("model.Catalogue.ReadBookTree: nil context")
-		return nil, nil, err
-	}
-
-	if bookID &lt;= 0 {
-		err := errors.New("model.Catalogue.ReadBookTree: book ID must be positive")
-		return nil, nil, err
-	}
-
-	if db.DB == nil {
-		err := errors.New("model.Catalogue.ReadBookTree: database is not initialized")
-		return nil, nil, err
-	}
-
-	tx := db.DB.WithContext(ctx).Begin(&amp;sql.TxOptions{
-		Isolation: sql.LevelRepeatableRead,
-		ReadOnly:  true,
-	})
-	if tx.Error != nil {
-		return nil, nil, tx.Error
-	}
-	defer tx.Rollback()
-
-	var book Book
-	err := tx.Select("id", "title", "sort", "display_status").
-		Where("id = ?", bookID).Take(&amp;book).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil, BookNotFoundErr
-		}
-
-		return nil, nil, err
-	}
-
-	var rows []Catalogue
-	err = tx.Model(&amp;Catalogue{}).
-		Select("id", "book_id", "parent_id", "name", "intro", "type", "sort", "display_status").
-		Where("book_id = ?", bookID).Find(&amp;rows).Error
-	if err != nil {
-		return nil, nil, err
-	}
-
-	err = tx.Commit().Error
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return &amp;book, rows, nil
-}
-
-// ReorderChildren 锁定直接子节点, 由 plan 按 ID 返回有变更的目标状态, 再原子提交排序.
+<section id="transaction"><h2>在同一事务中保存排序和子树显隐</h2>
+<p>模型使用锁定时读取的 <code>row</code> 保存原状态，业务层计算的 <code>target</code> 保存最终状态。两次写入之间仍可据此区分真正移回待排的节点与仅换位的节点。</p>
+<ol>
+<li>先按父目录 ID 定位所属书籍，再开启事务，依次锁定书籍、父目录和同书的直接子项。核对父目录归属与同级分组后计算变更计划。</li>
+<li><code>writeChildOrder</code> 的第一个循环将有变更的已排节点临时写为 <code>NULL / hidden</code>，为 <code>uk_book_parent_sort</code> 唯一索引释放旧序号。此时跳过后代，交换两章的位置也可以安全释放旧序号。</li>
+<li>第二个循环检查 <code>row.Sort != nil &amp;&amp; target.Sort == nil</code>。该节点自己的最终值已在第一个循环写入。若 <code>row.DisplayStatus == enum.DisplayVisible</code>，由被移回的节点调用 <code>row.hideDescendants(tx)</code>，从它的直接子项开始遍历。接收者 <code>c</code> 是排序抽屉的父目录，使用它会误隐藏兄弟分支。已隐藏的节点移回待排时跳过级联。</li>
+<li>后代与同层排序共用这个事务。遍历按书籍和父子关系取全部层级，穿过隐藏的中间目录，只将仍可见的后代写为隐藏。其他排序变更按最终目标赋值。中途写入失败或发现环时，已处理的子树和同层排序一起回滚。</li>
+</ol>
+<p class="note">排序和显隐均先锁书籍行。同书并发请求按取得书锁的顺序读取最新状态，级联的判断采用锁定时的显隐。</p>
+<p>下例列出 <code>model/catalogue.go</code> 中的四个排序方法。本次模型改动位于 <code>writeChildOrder</code>。复用同文件已有的 <code>hideDescendants</code> 和 <code>CatalogueCycleErr</code>。<a href="catalogue-display-api-implementation.html#model">后代遍历与环检测</a> · <a href="../model/catalogue.go">完整目录模型</a>。</p>
+<details><summary><small>现有模型中的排序方法</small>model/catalogue.go</summary>
+<pre><code id="model-reorder" data-path="model/catalogue.go" data-mode="methods">// ReorderChildren 锁定直接子节点, 由 plan 按 ID 返回有变更的目标状态, 再原子提交排序.
 func (c *Catalogue) ReorderChildren(ctx context.Context, parentID int64, plan func([]Catalogue) (map[int64]Catalogue, error)) error {
 	if c == nil {
 		return errors.New("model.Catalogue.ReorderChildren: nil receiver")
@@ -585,7 +501,13 @@ func (c *Catalogue) writeChildOrder(tx *gorm.DB, rows []Catalogue, changes map[i
 			continue
 		}
 		if row.Sort != nil &amp;&amp; target.Sort == nil {
-			continue // 该项在释放旧号时已落到最终的 NULL 和 hidden.
+			// 该节点已在释放旧序号时写为 NULL / hidden, 按锁定时的状态决定是否隐藏后代.
+			if row.DisplayStatus == enum.DisplayVisible {
+				if err := row.hideDescendants(tx); err != nil {
+					return err
+				}
+			}
+			continue
 		}
 		if err := c.updateChildOrder(tx, row.ID, target.Sort, target.DisplayStatus); err != nil {
 			return err
@@ -663,18 +585,21 @@ func Reorder(c *gin.Context) {
 </section>
 <section id="verify"><h2>联调与并发验收</h2>
 <p>在可写的隔离测试库准备两个文件夹或两本书，至少准备一个待排节点和两个已排节点。用 <code>/v1/catalogue/tree</code> 取测试父目录完整的 <code>children</code>，在 Postman 中选择 Bearer Token、raw / JSON。每次检查响应后再重读目录树，同时比对书籍、父目录和另一层子项。</p><div class="table-wrap"><table><thead><tr><th scope="col">操作</th><th scope="col">应观察到的结果</th></tr></thead><tbody>
-<tr><td>首次将两个待排项加入，随后互换两个已排项</td><td>两次均成功；顺序变为目标序列，序号连续且没有唯一键冲突。</td></tr>
-<tr><td>将全部已排项移回待排；再加入其中一项</td><td>先全部 <code>null / hidden</code>，重新加入的项为 <code>1 / visible</code>。空文件夹的两份分组均显式传空数组可成功。</td></tr>
+<tr><td>首次将两个待排项加入，随后互换两个已排项</td><td>两次均成功，序号连续。两个节点的后代在换位前后保持各自显隐，原本可见的正文仍然可见。</td></tr>
+<tr><td>把可见章节移回待排区。章内有隐藏目录，其下有可见正文；另有已排的兄弟章节。</td><td>当前章节为 <code>NULL / hidden</code>，正文及所有后代均为 <code>hidden</code>。后代序号、兄弟分支与其他书籍的显隐保留原值。</td></tr>
+<tr><td>把两个可见章节一起移回待排，再将其中一个重新加入已排区。</td><td>首次保存隐藏两棵子树；再次保存只将重新加入的章设为 <code>1 / visible</code>，已排序和待排序的后代都保留隐藏。</td></tr>
+<tr><td>已排章节已隐藏，其中一篇已排正文后来被单独设为显示。将该章移回待排。</td><td>章的序号变为 <code>NULL</code>，章仍隐藏，正文仍显示。</td></tr>
+<tr><td>空文件夹的 <code>expected</code> 和 <code>target</code> 各传两个空数组。</td><td>返回 <code>200</code>，无需写入。</td></tr>
 <tr><td>节点已排序且手动隐藏；在抽屉中移出又加回，或只调换它的位置</td><td>新序号正确，仍为 <code>hidden</code>。更深层子项和书籍显隐均保持各自原值。</td></tr>
 <tr><td>仅改变 expected 或 target 中待排 ID 的顺序</td><td>待排按集合理解，保存成功；若最终状态已经吻合，整次操作可以没有 UPDATE。</td></tr>
 <tr><td>排序快照中重复、跨数组重复、包含父节点、target 少一项、数字型 ID、缺数组或 null</td><td><code>10101</code>，整批无写入。</td></tr>
 <tr><td>用合法的父 ID，快照中含同书其他父项的孩子、别书孩子，或者两份分组均漏列一个现有孩子</td><td><code>20302</code>；实际层及其他层全部保持原状。</td></tr>
 <tr><td>父 ID 指向文件、已删除的父项；移除令牌</td><td>分别返回 <code>10101</code>、<code>20301</code>、<code>20004</code>。</td></tr>
 <tr><td>甲、乙携带同一快照保存不同目标，甲先实际改变顺序或分组并提交</td><td>乙获取书锁后读到甲的结果，返回 <code>20302</code>。若甲仅改变显隐，乙仍可提交，并保留持续已排节点的最新显隐。</td></tr>
-<tr><td>在隔离库中让第二阶段的某次写入失败</td><td>整个事务回滚，原有序号、显隐、其他层数据均保持调用前状态。</td></tr>
+<tr><td>同时调整兄弟章节的顺序并移回可见章节，在隔离库中让深层后代更新失败。</td><td>返回 <code>10201</code>。同级节点的序号、显隐及已经更新的后代全部恢复原值。</td></tr>
 </tbody></table></div>
 <p>若响应超时或丢失，客户端先重读树；按已排序列、待排集合比较当前分组与原 <code>target</code>。若已达成目标即可结束；否则让管理员基于最新分组确认，以新的 <code>expected</code> 再次提交。原快照已经失效时，即使重发相同请求也可能收到 <code>20302</code>。</p>
-<p><strong>示例验证。</strong> 将本页 Go 代码应用到当前工程的独立副本后，通过了 Gin 路由测试。在单独初始化的 MySQL 8.4.13 / InnoDB 中，两个使用同一快照的并发保存分别返回 <code>200</code> 和 <code>20302</code>；强制第二阶段写入失败后，所有子项都恢复为保存前的序号和显隐。</p></section>
+</section>
 </main></div>
 <script>
   const controls = document.querySelector('.tools');
