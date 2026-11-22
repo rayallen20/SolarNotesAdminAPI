@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Solar Notes 管理端设置目录节点显示状态的实现方案，含请求及响应、事务加锁、排序约束和联调样例。">
-<title>单独设置一个节点的显示状态 · Solar Notes</title><style>
+<meta name="description" content="目录节点从显示切换为隐藏时，在同一事务中隐藏全部后代；切换为显示时只更新选中节点。含 Go 实现与验收用例。">
+<title>目录节点显隐与级联隐藏 · Solar Notes</title><style>
     :root {
       color-scheme: light;
       --ink: #192f29; --muted: #53665e; --green: #205e49; --line: #cddbd2;
@@ -57,10 +57,10 @@
     .table-wrap td:first-child { min-width: 6rem; }
     @media print { .tools { display: none; } }
 </style></head><body><div class="page"><aside><div class="project">Solar Notes · 管理 API</div>
-<nav aria-label="本文目录"><a href="#contract">请求与响应</a><a href="#rules">哪些节点可以显示</a><a href="#input">请求 DTO 与业务码</a><a href="#biz">目录业务方法</a><a href="#model">事务与单列更新</a><a href="#http">控制器与路由</a><a href="#verify">联调与并发验收</a></nav></aside>
-<main><header><div class="endpoint">POST /v1/catalogue/display</div><h1>单独设置一个节点的显示状态</h1>
-<p>管理员点击目录开关时，前端发送节点 ID 和明确的目标状态。后端用锁定后的排序值判断能否显示，只更新这个节点的 <code>display_status</code>。文件夹和文件使用同一入口。</p>
-<p><a href="../../SolarNotesAdmin/doc/catalogue-api-design.html#display">目录管理接口设计 · 第 ⑤ 项</a> · <a href="catalogue-reorder-api-implementation.html#transitions">同级排序的显隐规则</a> · <a href="catalogue-tree-api-implementation.html#contract">目录树接口</a></p>
+<nav aria-label="本文目录"><a href="#contract">请求与响应</a><a href="#rules">四种状态转换</a><a href="#input">请求 DTO 与业务码</a><a href="#biz">目录业务方法</a><a href="#model">事务与后代遍历</a><a href="#http">控制器与路由</a><a href="#verify">联调与并发验收</a></nav></aside>
+<main><header><div class="endpoint">POST /v1/catalogue/display</div><h1>目录节点显隐与级联隐藏</h1>
+<p>管理员关闭一个正在显示的节点时，该节点和它的全部后代在同一事务中变为隐藏。重新打开它，只显示选中的节点。后代保留各自的状态，待排序的文件或文件夹仍须先排序才能显示。</p>
+<p><a href="../../SolarNotesAdmin/doc/catalogue-api-design.html#display">前端设计第 ⑤ 项（旧版单节点规则）</a> · <a href="catalogue-reorder-api-implementation.html#transitions">同级排序的显隐规则</a> · <a href="catalogue-tree-api-implementation.html#contract">目录树接口</a></p>
 <div class="tools" hidden><button type="button" data-open="true">展开全部示例</button><button type="button" data-open="false">收起全部示例</button></div></header>
 
 <section id="contract"><h2>传入节点 ID 和目标状态</h2>
@@ -77,21 +77,24 @@
   "message": "success",
   "data": {}
 }</code></pre></details>
-<p>示例沿用排序文档中的第一章。假设它目前排第 2，隐藏成功后仍排第 2。要重新显示，用同一个 ID 发送 <code>"display_status": "visible"</code>。前端收到 <code>code=200</code> 时按本次提交的值更新这个开关；请求超时或响应丢失时，用 <code>POST /v1/catalogue/tree</code> 读取最新状态，再决定是否重试。</p>
+<p>假设第一章当前可见、序号为 2，章内有已显示的正文和待排序的附录。本次请求成功后，第一章、正文和附录全部隐藏，各自的序号保持原值。用同一个 ID 发送 <code>"display_status": "visible"</code>，只会重新显示第一章。</p>
+<p>隐藏请求成功后，前端用 <code>POST /v1/catalogue/tree</code> 重新读取当前书并刷新子树开关。成功响应的 <code>data</code> 为空，客户端无法据此区分实际切换和重复提交。显示成功时可直接更新选中节点的开关。若请求超时或响应丢失，也先读取目录树确认结果。</p>
 </section>
 
-<section id="rules"><h2>按锁定后的 sort 判断</h2>
-<div class="table-wrap"><table><thead><tr><th scope="col">节点当前状态</th><th scope="col">请求 visible</th><th scope="col">请求 hidden</th></tr></thead><tbody>
-<tr><td>根文件夹，<code>parent_id=0</code>，<code>sort=0</code></td><td>成功，保留序号 0。</td><td>成功，保留序号 0。</td></tr>
-<tr><td>已排序的普通文件夹或文件，<code>sort&gt;0</code></td><td>成功，保留当前序号。</td><td>成功，保留当前序号。</td></tr>
-<tr><td>待排序的普通文件夹或文件，<code>sort=NULL</code></td><td>返回 <code>20303</code>。先用排序接口将其排入阅读顺序。</td><td>成功，保留 <code>NULL</code>。待排项本来就是隐藏时跳过更新。</td></tr>
+<section id="rules"><h2>按锁定后的状态决定更新范围</h2>
+<div class="table-wrap"><table><thead><tr><th scope="col">当前 → 请求</th><th scope="col">选中节点</th><th scope="col">同书后代</th></tr></thead><tbody>
+<tr><td><code>visible → hidden</code></td><td>设为隐藏。</td><td>沿 <code>parent_id</code> 遍历所有层级，全部设为隐藏。遇到已经隐藏的中间目录也要继续向下。</td></tr>
+<tr><td><code>hidden → visible</code></td><td>排序校验通过后设为显示。</td><td>保留每个后代的现状，包括已排序和待排序的后代。</td></tr>
+<tr><td><code>hidden → hidden</code></td><td>校验后返回成功。</td><td>跳过遍历和写入。若管理员后来单独显示了某个已排子节点，重复隐藏父节点会保留该子节点的选择。</td></tr>
+<tr><td><code>visible → visible</code></td><td>排序校验通过后返回成功。</td><td>跳过遍历和写入。</td></tr>
 </tbody></table></div>
-<p>合法目标已经生效时直接成功。隐藏文件夹只会更新这个节点的显示状态，子孙节点和书籍各自保存的显隐值都会保留。已排进度按 <code>sort</code> 统计，切换开关不改变进度。原型会禁用待排节点的开关；服务端仍检查直接调用 API 的请求。<a href="../../SolarNotesAdmin/doc/catalogue-management-prototype.html#children-list">目录管理原型</a>。</p>
+<p><strong>显示的前提。</strong>根文件夹使用 <code>parent_id=0</code> 和 <code>sort=0</code>；普通文件夹和文件须有正数序号。请求显示 <code>sort=NULL</code> 的普通节点时返回 <code>20303</code>。隐藏允许待排序节点保留 <code>NULL</code>，服务端也会校验直接发送的请求。</p>
+<p><strong>级联的边界。</strong>隐藏根节点会覆盖这本书根下的整棵树；隐藏叶节点只影响它自己。操作只写指定范围内的 <code>catalogue.display_status</code>，所有序号、祖先、兄弟分支、其他书的节点和书籍本身的显隐均保留。排序接口仍按自己的规则更新直接子项，例如将待排项排入阅读顺序时可以将它设为显示。<a href="catalogue-reorder-api-implementation.html#transitions">排序时的状态转换</a>。</p>
 </section>
 
 <section id="input"><h2>复用现有校验与响应包装器</h2>
-<p>新建请求 DTO。<code>json:"id,string"</code> 直接把十进制字符串读入 <code>int64</code>，避免前端对雪花 ID 做数值转换。<code>binding:"required,oneof=visible hidden"</code> 由 Gin 校验，区分大小写。客户端每次指定要保存的状态，因此重复提交同一值也有确定的结果。</p>
-<details><summary><small>新建完整文件</small>param/req/v1/catalogue/display.go</summary>
+<p>沿用现有请求 DTO。<code>json:"id,string"</code> 将十进制字符串读入 <code>int64</code>，避免前端对雪花 ID 做数值转换。<code>binding:"required,oneof=visible hidden"</code> 由 Gin 校验，区分大小写。客户端只需指定目标节点，后端负责查找后代。</p>
+<details><summary><small>现有请求定义</small>param/req/v1/catalogue/display.go</summary>
 <pre><code id="sample-req" data-path="param/req/v1/catalogue/display.go">package catalogue
 
 // DisplayReq 指定单个目录节点的目标显示状态.
@@ -104,10 +107,10 @@ type DisplayCatalogueReq struct {
 	ID            int64  `json:"id,string" binding:"gt=0"`                               // ID 是目录树中节点的十进制字符串 ID.
 	DisplayStatus string `json:"display_status" binding:"required,oneof=visible hidden"` // DisplayStatus 是本次请求的目标值.
 }</code></pre></details>
-<p>在 <code>sys_error/catalogue_error.go</code> 增加排序前置条件错误，在 <code>resp_body/resp_body.go</code> 集中登记业务码与响应方法。响应均沿用 HTTP 200 和 <code>data: {}</code>。</p>
-<details><summary><small>追加到现有文件</small>sys_error/catalogue_error.go</summary>
+<p>排序前置条件错误已定义在 <code>sys_error/catalogue_error.go</code>，业务码与响应方法在 <code>resp_body/resp_body.go</code>。本次沿用 HTTP 200 和 <code>data: {}</code>。</p>
+<details><summary><small>现有业务错误</small>sys_error/catalogue_error.go</summary>
 <pre><code id="sample-err" data-path="sys_error/catalogue_error.go">// CatalogueSortRequiredErr 表示普通节点需要先排入阅读顺序才能显示.
-var CatalogueSortRequiredErr = errors.New("请先为该节点排序, 再设置为显示")</code></pre></details><details><summary><small>追加到现有文件</small>resp_body/resp_body.go</summary>
+var CatalogueSortRequiredErr = errors.New("请先为该节点排序, 再设置为显示")</code></pre></details><details><summary><small>现有响应包装器</small>resp_body/resp_body.go</summary>
 <pre><code id="sample-resp" data-path="resp_body/resp_body.go">// CatalogueSortRequiredCode 表示用户请求显示待排序的节点.
 const CatalogueSortRequiredCode = 20303
 
@@ -120,9 +123,9 @@ func (r *RespBody) CatalogueSortRequiredError() {
 <tr><td><code>10101</code></td><td>请求对象、ID 或枚举不合法，例如缺少节点、发送数值 ID、ID 小于等于 0 或发送 <code>"Visible"</code>。</td></tr>
 <tr><td><code>20003 / 20004</code></td><td>管理员令牌已过期 / 缺失、无效或已撤销，复用全局鉴权。</td></tr>
 <tr><td><code>20301</code></td><td>预查或加锁复查时，目标目录节点已不存在。</td></tr>
-<tr><td><strong><code>20303</code></strong></td><td>新增。要求显示仍待排序的普通节点。</td></tr>
+<tr><td><strong><code>20303</code></strong></td><td>要求显示仍待排序的普通节点。</td></tr>
 <tr><td><code>20202</code></td><td>节点仍在且仍属于原书，但对应的书籍行已不存在。复用项目现有的书籍错误。</td></tr>
-<tr><td><code>10201 / 500</code></td><td>查询、更新或提交事务失败时返回 <code>10201</code>。锁定后发现节点所属书籍与预查不一致、内部调用或节点结构异常时返回 <code>500</code>。</td></tr>
+<tr><td><code>10201 / 500</code></td><td>数据库查询、批量更新或提交报错返回 <code>10201</code>。节点归属变化、遍历时发现父子关系成环、内部调用或目标节点结构异常返回 <code>500</code>。</td></tr>
 </tbody></table></div>
 <details open><summary><small>HTTP 200</small>显示待排序节点时的业务响应</summary>
 <pre><code id="sample-failure">{
@@ -133,10 +136,10 @@ func (r *RespBody) CatalogueSortRequiredError() {
 </section>
 
 <section id="biz"><h2>把显隐规则放在 biz.Catalogue 中</h2>
-<p>将 <code>Display</code> 和 <code>checkDisplayTarget</code> 追加到现有的 <code>biz/catalogue.go</code>。前者接收完整的 <code>*reqCatalogue.DisplayReq</code>，后者作为具名方法交给 DAO，在取得节点行锁后执行。与排序接口的 <code>plan.changes</code> 用法一致。<a href="../biz/catalogue.go">当前目录业务实体</a>。</p>
+<p>在现有 <code>biz.Catalogue.Display</code> 的错误映射中，将 <code>model.CatalogueCycleErr</code> 与 <code>model.CatalogueOwnerChangedErr</code> 一并映射为内部错误。<code>Display</code> 接收完整的 <code>*reqCatalogue.DisplayReq</code>，由 DAO 取得行锁后调用 <code>checkDisplayTarget</code> 校验选中节点。<a href="../biz/catalogue.go">当前目录业务实体</a>。</p>
 <p>复用 <code>validateCatalogueRow</code> 检查应用目标状态后的节点。传入的是行值副本，替换副本的 <code>DisplayStatus</code> 不影响 DAO 比较原值。先判断“普通待排节点请求显示”，再判断是否已经是目标状态。这样即使存量数据里有待排但可见的异常行，也不会误报显示成功；设为隐藏可以恢复它。根的类型或序号损坏、普通节点使用 0 等结构异常归为内部错误。<a href="../biz/catalogue_node.go">现有的行校验</a>。</p>
-<details open><summary><small>加入现有 import 块</small>biz/catalogue.go</summary>
-<pre><code id="sample-enum-import" data-path="biz/catalogue.go">"SolarNotesAdminAPI/enum"</code></pre></details><details><summary><small>追加到现有文件</small>biz/catalogue.go</summary>
+<details><summary><small>现有枚举导入</small>biz/catalogue.go</summary>
+<pre><code id="sample-enum-import" data-path="biz/catalogue.go">"SolarNotesAdminAPI/enum"</code></pre></details><details><summary><small>更新后的业务方法</small>biz/catalogue.go</summary>
 <pre><code id="sample-biz" data-path="biz/catalogue.go">// Display 在完整请求的基础上设置节点状态, 由控制器组装成功响应.
 func (c *Catalogue) Display(ctx context.Context, req *reqCatalogue.DisplayReq) error {
 	if c == nil {
@@ -164,7 +167,7 @@ func (c *Catalogue) Display(ctx context.Context, req *reqCatalogue.DisplayReq) e
 		return sys_error.BookNotFoundErr
 	case errors.Is(err, sys_error.CatalogueSortRequiredErr), errors.As(err, &amp;internalErr):
 		return err
-	case errors.Is(err, model.CatalogueOwnerChangedErr):
+	case errors.Is(err, model.CatalogueOwnerChangedErr), errors.Is(err, model.CatalogueCycleErr):
 		return &amp;sys_error.InternalError{Cause: err}
 	default:
 		return &amp;sys_error.DatabaseError{Cause: err}
@@ -185,17 +188,17 @@ func (c *Catalogue) checkDisplayTarget(node model.Catalogue, target string) erro
 }</code></pre></details>
 </section>
 
-<section id="model"><h2>先锁书籍，再锁节点，最后更新一列</h2>
-<p>将下面的错误和 <code>SetDisplayStatus</code> 方法追加到现有 <code>model/catalogue.go</code>。接收者的 <code>ID</code> 和 <code>DisplayStatus</code> 指定目标节点和状态，事务中的 <code>node</code> 保存锁定后的当前值。该文件已有示例使用的全部导入。<a href="../model/catalogue.go">现有的目录模型与排序事务</a>。</p>
-<ol><li>按节点 ID 普通读取 <code>book_id</code>，只确定要锁哪本书。开始事务后，依次对 <code>book.id</code> 和 <code>catalogue.id</code> 做 <code>SELECT ... FOR UPDATE</code>，复核节点是否还在、是否仍属于这本书。</li>
-<li>把锁定行送给业务方法校验。通过后才比较当前状态与目标；相同则提交事务，省去 <code>UPDATE</code>。状态有变化时执行 <code>UPDATE catalogue SET display_status = ? WHERE id = ? AND book_id = ?</code>，核对影响一行后提交。数据库若配置了自动维护的 <code>updated_at</code>，实际变更时由数据库维护。</li>
-<li>每个请求最多开启一个写事务。若锁定后发现 <code>book_id</code> 与预查不一致，立即返回 <code>CatalogueOwnerChangedErr</code>，由 <code>defer tx.Rollback()</code> 回滚。业务层将其映射为内部错误，响应体的 <code>code</code> 为 <code>500</code>。</li></ol>
-<p>这里与 <code>ReorderChildren</code> 共用“先书籍、后目录”的锁顺序。同一本书的两种写操作会在书籍行上串行；单节点显隐只需要在取得书籍锁后读取目标节点。InnoDB 的锁定读在取得锁后读取当前记录。<a href="https://dev.mysql.com/doc/refman/8.4/en/innodb-locking-reads.html">MySQL 8.4 锁定读</a>。</p>
-<details><summary><small>追加到现有文件</small>model/catalogue.go</summary>
-<pre><code id="sample-model" data-path="model/catalogue.go">// CatalogueOwnerChangedErr 表示预查的所属书籍与锁定节点的当前归属不同.
-var CatalogueOwnerChangedErr = errors.New("catalogue ownership changed during display update")
+<section id="model"><h2>在同一事务中隐藏目标和全部后代</h2>
+<p>在 <code>model/catalogue.go</code> 的错误定义处增加 <code>CatalogueCycleErr</code>，替换现有 <code>SetDisplayStatus</code>，并在同文件加入 <code>(*Catalogue).hideDescendants</code>。示例所需的导入和 <code>CatalogueOwnerChangedErr</code> 已在文件中。<a href="../model/catalogue.go">现有目录模型与排序事务</a>。</p>
+<ol><li>按节点 ID 预读 <code>book_id</code>。开启事务后，按现有排序接口的顺序锁定书籍行和目标节点，复核归属再校验目标状态。同书的显隐和排序请求在书籍行锁上串行。归属变化时回滚并返回 <code>500</code>，每个请求最多开启一次写事务。</li>
+<li>在锁内比较当前值和请求值。合法的同值请求直接提交。实际切换时先更新目标行并核对影响一行。只有原值为 <code>visible</code> 且目标为 <code>hidden</code> 才进入后代遍历，重新显示可直接提交。</li>
+<li>从选中节点的 ID 开始，每批取最多 256 个父 ID，在本书内按 <code>parent_id</code> 锁定读取所有直接子节点。发现子节点时不按显隐或序号筛选，全部加入队列；写入时才跳过已隐藏的行。一个隐藏目录下的可见孙节点也会被找到。</li>
+<li>队列为空后提交一次。批次大小只限制单条查询中父 ID 的个数。若查询或写入失败，或遍历时重复遇到同一 ID（父子关系成环），返回错误，回滚目标和先前所有批次的修改。</li></ol>
+<details open><summary><small>替换模型方法，新增错误与遍历方法</small>model/catalogue.go</summary>
+<pre><code id="sample-model" data-path="model/catalogue.go">// CatalogueCycleErr 表示沿父子关系遍历时再次遇到了已访问的节点.
+var CatalogueCycleErr = errors.New("cycle in catalogue subtree")
 
-// SetDisplayStatus 按节点 ID 定位书籍, 在同一事务中依次锁书和节点, 校验并设置显隐.
+// SetDisplayStatus 在一个事务中设置节点显隐, 从显示切为隐藏时同步隐藏全部后代.
 func (c *Catalogue) SetDisplayStatus(ctx context.Context, check func(Catalogue, string) error) error {
 	if c == nil {
 		return errors.New("model.Catalogue.SetDisplayStatus: nil receiver")
@@ -253,24 +256,75 @@ func (c *Catalogue) SetDisplayStatus(ctx context.Context, check func(Catalogue, 
 	if err != nil {
 		return err
 	}
-	if node.DisplayStatus != c.DisplayStatus {
-		result := tx.Model(&amp;Catalogue{}).Where("id = ? AND book_id = ?", node.ID, node.BookID).
-			UpdateColumn("display_status", c.DisplayStatus)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return fmt.Errorf("catalogue %d display update affected %d rows", node.ID, result.RowsAffected)
+	if node.DisplayStatus == c.DisplayStatus {
+		return tx.Commit().Error
+	}
+
+	result := tx.Model(&amp;Catalogue{}).Where("id = ? AND book_id = ?", node.ID, node.BookID).
+		UpdateColumn("display_status", c.DisplayStatus)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("catalogue %d display update affected %d rows", node.ID, result.RowsAffected)
+	}
+	if node.DisplayStatus == enum.DisplayVisible &amp;&amp; c.DisplayStatus == enum.DisplayHidden {
+		err = node.hideDescendants(tx)
+		if err != nil {
+			return err
 		}
 	}
 	return tx.Commit().Error
+}
+
+// hideDescendants 使用调用方的事务逐批隐藏同书后代. 接收者是已锁定的目标行.
+func (c *Catalogue) hideDescendants(tx *gorm.DB) error {
+	const batchSize = 256
+	pending := []int64{c.ID}
+	seen := map[int64]struct{}{c.ID: {}}
+	lock := clause.Locking{Strength: "UPDATE"}
+
+	for len(pending) &gt; 0 {
+		count := min(len(pending), batchSize)
+		parentIDs := pending[:count]
+		pending = pending[count:]
+
+		// 查出所有直接子节点, 已隐藏的中间目录也可能有可见后代.
+		var childIDs []int64
+		err := tx.Model(&amp;Catalogue{}).Clauses(lock).
+			Where("book_id = ? AND parent_id IN ?", c.BookID, parentIDs).
+			Order("id ASC").Pluck("id", &amp;childIDs).Error
+		if err != nil {
+			return err
+		}
+		if len(childIDs) == 0 {
+			continue
+		}
+		for _, id := range childIDs {
+			if _, exists := seen[id]; exists {
+				return fmt.Errorf("%w: book %d, node %d", CatalogueCycleErr, c.BookID, id)
+			}
+			seen[id] = struct{}{}
+		}
+
+		// 本批子节点可能都已隐藏, 更新零行也成功.
+		err = tx.Model(&amp;Catalogue{}).
+			Where("book_id = ? AND parent_id IN ?", c.BookID, parentIDs).
+			Where("display_status &lt;&gt; ?", enum.DisplayHidden).
+			UpdateColumn("display_status", enum.DisplayHidden).Error
+		if err != nil {
+			return err
+		}
+		pending = append(pending, childIDs...)
+	}
+	return nil
 }</code></pre></details>
 </section>
 
-<section id="http"><h2>追加控制器方法与鉴权路由</h2>
-<p>将 <code>Display</code> 追加到 <code>controller/v1/catalogue/catalogue.go</code>，复用 <code>bindCatalogueRequest</code> 校验单个完整 JSON 对象及 DTO 标签。控制器只将错误映射到已有包装器，成功时返回空对象。该文件已有示例使用的全部导入。<a href="../controller/v1/catalogue/catalogue.go">现有目录控制器</a>。</p>
-<details><summary><small>追加到现有文件</small>controller/v1/catalogue/catalogue.go</summary>
-<pre><code id="sample-controller" data-path="controller/v1/catalogue/catalogue.go">// Display 校验请求, 设置单个节点的显示状态并返回统一响应.
+<section id="http"><h2>沿用现有控制器与鉴权路由</h2>
+<p>控制器用 <code>bindCatalogueRequest</code> 校验单个完整 JSON 对象及 DTO 标签。调用 <code>biz.Catalogue.Display</code> 成功后返回空对象，遍历和提交事务均由模型层完成。<a href="../controller/v1/catalogue/catalogue.go">现有目录控制器</a>。</p>
+<details><summary><small>现有控制器</small>controller/v1/catalogue/catalogue.go</summary>
+<pre><code id="sample-controller" data-path="controller/v1/catalogue/catalogue.go">// Display 校验请求, 应用节点显隐规则并返回统一响应.
 func Display(c *gin.Context) {
 	req := &amp;reqCatalogue.DisplayReq{}
 	body := &amp;resp_body.RespBody{}
@@ -303,24 +357,29 @@ func Display(c *gin.Context) {
 
 	body.Success(map[string]any{})
 	c.JSON(http.StatusOK, body)
-}</code></pre></details><details open><summary><small>追加到现有 v1 路由组</small>main.go · newRouter</summary>
+}</code></pre></details><details open><summary><small>现有 v1 路由组</small>main.go · newRouter</summary>
 <pre><code id="sample-route" data-path="main.go">v1.POST("/catalogue/display", catalogue.Display)</code></pre></details>
-<p>在 <code>main.go</code> 的 <code>newRouter</code> 中，将路由追加到已有的 <code>v1</code> 分组。继续使用 <code>adminAuth.Handle</code> 和全局请求体大小限制，登录路由仍是唯一的免鉴权项。此次沿用 <code>catalogue.sort</code>、<code>catalogue.display_status</code> 和现有索引，开发步骤不涉及表结构变更。</p>
+<p>路由已在 <code>main.go</code> 的 <code>newRouter</code> 注册，沿用 <code>adminAuth.Handle</code> 和全局请求体大小限制。本次级联使用已有的 <code>book_id</code>、<code>parent_id</code> 和 <code>display_status</code>，可直接使用现有表结构。</p>
 </section>
 
 <section id="verify"><h2>联调与并发验收</h2>
-<p>在隔离的测试数据中准备一本书、一个根文件夹、一个已排文件夹及其子文件、一个同级已排节点和一个待排节点。先用 <code>/v1/catalogue/tree</code> 记下这些行的 ID、排序与显示状态，再用 Postman 的 <code>Bearer Token</code> 和 <code>raw → JSON</code> 发送首节请求。</p>
+<p>在隔离数据中准备两本书。第一本有可见的第一章、同级第二章；第一章下放置可见正文、隐藏的插图目录及其中的可见图片说明，再加一个 <code>sort=NULL</code> 的隐藏附录。先用 <code>/v1/catalogue/tree</code> 记录两本书的状态和序号，再用 Postman 的 <code>Bearer Token</code> 和 <code>raw → JSON</code> 发送首节请求。</p>
 <div class="table-wrap"><table><thead><tr><th scope="col">操作</th><th scope="col">用目录树或数据库复核</th></tr></thead><tbody>
-<tr><td>隐藏序号为 2 的文件夹，重复隐藏，再显示。</td><td>三次均为 <code>200</code>。序号始终为 2；子文件、同级节点和书籍均保持原值。重复隐藏时不执行更新。</td></tr>
-<tr><td>分别隐藏和显示根节点；对隐藏书中的已排文件请求显示。</td><td>根节点两次均成功，序号仍为 0。文件可独立显示，书籍本身依旧隐藏。</td></tr>
+<tr><td>将可见的第一章设为隐藏，再读取两本书。</td><td>返回 <code>200</code>。第一章、正文、插图目录、图片说明和待排附录全部隐藏，包括原先位于隐藏目录下的可见孙节点。祖先、第二章、另一本书的全部节点和两本书自身的显隐均保持原值，所有序号保持原值。</td></tr>
+<tr><td>接上例，重新显示第一章。</td><td>返回 <code>200</code>，只有第一章显示。已排序的正文和 <code>sort=NULL</code> 的附录都保留隐藏；再次请求显示仍为 <code>200</code>。</td></tr>
+<tr><td>再次将可见的第一章隐藏，单独显示已排的正文，随后对已隐藏的第一章重复提交隐藏。</td><td>均返回 <code>200</code>。最后一次请求跳过遍历和更新，第一章仍隐藏，正文仍显示。</td></tr>
+<tr><td>把可见根节点隐藏，再单独显示根；另选一个已排叶节点，依次切换显示和隐藏。</td><td>隐藏根时同书根下的全部节点隐藏；再显示根时仅根显示，根的序号仍为 0。叶节点切换仅影响自己。</td></tr>
 <tr><td>对待排文件或文件夹先请求显示，再请求隐藏。</td><td>依次得到 <code>20303</code> 和 <code>200</code>。最终仍是 <code>NULL / hidden</code>。</td></tr>
 <tr><td>已有同层排序快照。甲先手动隐藏已排节点，乙再用该快照将它移到另一个已排位置。</td><td>两次都成功。节点采用新序号并保留手动隐藏，仅改显隐不会让排序快照失效。</td></tr>
 <tr><td>甲先通过排序将节点移回待排区，乙再请求显示；随后交换两个操作的提交顺序做对照。</td><td>排序先提交时，显示请求看到 <code>NULL</code>，返回 <code>20303</code>。显示先提交时，两次都可成功，最终由排序写为 <code>NULL / hidden</code>。</td></tr>
 <tr><td>两个管理员为同一个已排节点提交不同的合法目标。</td><td>两个请求均可成功，最终值等于最后提交的目标。可在一个事务持有书籍锁时发起另一个请求，确认它在锁释放后使用最新行。</td></tr>
+<tr><td>并发执行“隐藏可见的第一章”和“显示已排的正文”。</td><td>以取得同一本书写锁的顺序为准。隐藏先提交，随后单独显示的正文可见；显示先提交，随后级联的结果为整章隐藏。</td></tr>
+<tr><td>准备超过 256 个子文件夹，每个都有可见叶节点；再单独测试在较深一层更新时让数据库报错。</td><td>正常提交时所有分支都变为隐藏。数据库更新失败返回 <code>10201</code>，选中节点和先前成功处理的各层恢复到请求前的状态。</td></tr>
+<tr><td>在隔离数据中让可见节点的父子链接成环，从环上的节点请求隐藏。</td><td>遍历再次遇到已访问 ID 时返回 <code>500</code>，整笔回滚，所有节点保留原值。</td></tr>
 <tr><td>在隔离测试中，让节点的 <code>book_id</code> 在预查之后、取得书籍锁之前发生变化。</td><td>请求只定位一次，锁后复核失败即回滚，响应体 <code>code=500</code>。目标节点保留原显示状态。</td></tr>
 <tr><td>按已删除的节点 ID 提交；传数值 ID、未知状态、缺少 <code>catalogue</code>、连续两个 JSON 对象；使用无效或过期令牌。</td><td>节点缺失返回 <code>20301</code>；参数问题返回 <code>10101</code>；令牌返回 <code>20004</code> 或 <code>20003</code>。错误响应的 <code>data</code> 都是空对象。</td></tr>
 </tbody></table></div>
-<p>成功后按请求中的目标更新对应开关即可。若另一人随后编排或切换同一节点，以再次读取的目录树为准。</p></section></main>
+</section></main>
 </div><script>
   const controls = document.querySelector('.tools');
   controls.hidden = false;

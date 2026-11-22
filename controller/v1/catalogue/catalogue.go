@@ -128,7 +128,7 @@ func Reorder(c *gin.Context) {
 	c.JSON(http.StatusOK, body)
 }
 
-// Display 校验请求, 设置单个节点的显示状态并返回统一响应.
+// Display 校验请求, 应用节点显隐规则并返回统一响应.
 func Display(c *gin.Context) {
 	req := &reqCatalogue.DisplayReq{}
 	body := &resp_body.RespBody{}

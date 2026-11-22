@@ -22,6 +22,8 @@ var (
 	CatalogueOrderChangedErr = errors.New("catalogue order changed")
 	// CatalogueOwnerChangedErr 表示预查的所属书籍与锁定节点的当前归属不同.
 	CatalogueOwnerChangedErr = errors.New("catalogue ownership changed during display update")
+	// CatalogueCycleErr 表示沿父子关系遍历时再次遇到了已访问的节点.
+	CatalogueCycleErr = errors.New("cycle in catalogue subtree")
 )
 
 // Catalogue 映射 catalogue 表
@@ -221,7 +223,7 @@ func (c *Catalogue) updateChildOrder(tx *gorm.DB, childID int64, rank *uint32, s
 	return nil
 }
 
-// SetDisplayStatus 按节点 ID 定位书籍, 在同一事务中依次锁书和节点, 校验并设置显隐.
+// SetDisplayStatus 在一个事务中设置节点显隐, 从显示切为隐藏时同步隐藏全部后代.
 func (c *Catalogue) SetDisplayStatus(ctx context.Context, check func(Catalogue, string) error) error {
 	if c == nil {
 		return errors.New("model.Catalogue.SetDisplayStatus: nil receiver")
@@ -279,15 +281,66 @@ func (c *Catalogue) SetDisplayStatus(ctx context.Context, check func(Catalogue, 
 	if err != nil {
 		return err
 	}
-	if node.DisplayStatus != c.DisplayStatus {
-		result := tx.Model(&Catalogue{}).Where("id = ? AND book_id = ?", node.ID, node.BookID).
-			UpdateColumn("display_status", c.DisplayStatus)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return fmt.Errorf("catalogue %d display update affected %d rows", node.ID, result.RowsAffected)
+	if node.DisplayStatus == c.DisplayStatus {
+		return tx.Commit().Error
+	}
+
+	result := tx.Model(&Catalogue{}).Where("id = ? AND book_id = ?", node.ID, node.BookID).
+		UpdateColumn("display_status", c.DisplayStatus)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("catalogue %d display update affected %d rows", node.ID, result.RowsAffected)
+	}
+	if node.DisplayStatus == enum.DisplayVisible && c.DisplayStatus == enum.DisplayHidden {
+		err = node.hideDescendants(tx)
+		if err != nil {
+			return err
 		}
 	}
 	return tx.Commit().Error
+}
+
+// hideDescendants 使用调用方的事务逐批隐藏同书后代. 接收者是已锁定的目标行.
+func (c *Catalogue) hideDescendants(tx *gorm.DB) error {
+	const batchSize = 256
+	pending := []int64{c.ID}
+	seen := map[int64]struct{}{c.ID: {}}
+	lock := clause.Locking{Strength: "UPDATE"}
+
+	for len(pending) > 0 {
+		count := min(len(pending), batchSize)
+		parentIDs := pending[:count]
+		pending = pending[count:]
+
+		// 查出所有直接子节点, 已隐藏的中间目录也可能有可见后代.
+		var childIDs []int64
+		err := tx.Model(&Catalogue{}).Clauses(lock).
+			Where("book_id = ? AND parent_id IN ?", c.BookID, parentIDs).
+			Order("id ASC").Pluck("id", &childIDs).Error
+		if err != nil {
+			return err
+		}
+		if len(childIDs) == 0 {
+			continue
+		}
+		for _, id := range childIDs {
+			if _, exists := seen[id]; exists {
+				return fmt.Errorf("%w: book %d, node %d", CatalogueCycleErr, c.BookID, id)
+			}
+			seen[id] = struct{}{}
+		}
+
+		// 本批子节点可能都已隐藏, 更新零行也成功.
+		err = tx.Model(&Catalogue{}).
+			Where("book_id = ? AND parent_id IN ?", c.BookID, parentIDs).
+			Where("display_status <> ?", enum.DisplayHidden).
+			UpdateColumn("display_status", enum.DisplayHidden).Error
+		if err != nil {
+			return err
+		}
+		pending = append(pending, childIDs...)
+	}
+	return nil
 }

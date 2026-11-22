@@ -129,7 +129,7 @@ func (c *Catalogue) Display(ctx context.Context, req *reqCatalogue.DisplayReq) e
 		return sys_error.BookNotFoundErr
 	case errors.Is(err, sys_error.CatalogueSortRequiredErr), errors.As(err, &internalErr):
 		return err
-	case errors.Is(err, model.CatalogueOwnerChangedErr):
+	case errors.Is(err, model.CatalogueOwnerChangedErr), errors.Is(err, model.CatalogueCycleErr):
 		return &sys_error.InternalError{Cause: err}
 	default:
 		return &sys_error.DatabaseError{Cause: err}
