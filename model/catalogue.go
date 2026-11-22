@@ -20,6 +20,8 @@ var (
 	CatalogueParentNotFolderErr = errors.New("catalogue parent must be a folder")
 	// CatalogueOrderChangedErr 表示父目录归属或同级排序快照已变化.
 	CatalogueOrderChangedErr = errors.New("catalogue order changed")
+	// CatalogueOwnerChangedErr 表示预查的所属书籍与锁定节点的当前归属不同.
+	CatalogueOwnerChangedErr = errors.New("catalogue ownership changed during display update")
 )
 
 // Catalogue 映射 catalogue 表
@@ -217,4 +219,75 @@ func (c *Catalogue) updateChildOrder(tx *gorm.DB, childID int64, rank *uint32, s
 		return fmt.Errorf("catalogue %d order update affected %d rows", childID, result.RowsAffected)
 	}
 	return nil
+}
+
+// SetDisplayStatus 按节点 ID 定位书籍, 在同一事务中依次锁书和节点, 校验并设置显隐.
+func (c *Catalogue) SetDisplayStatus(ctx context.Context, check func(Catalogue, string) error) error {
+	if c == nil {
+		return errors.New("model.Catalogue.SetDisplayStatus: nil receiver")
+	}
+	if ctx == nil {
+		return errors.New("model.Catalogue.SetDisplayStatus: nil context")
+	}
+	if check == nil {
+		return errors.New("model.Catalogue.SetDisplayStatus: missing display rule")
+	}
+	if db.DB == nil {
+		return errors.New("database is not initialized")
+	}
+	conn := db.DB.WithContext(ctx)
+	var hint Catalogue
+	err := conn.Select("book_id").Where("id = ?", c.ID).Take(&hint).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return CatalogueNotFoundErr
+	}
+	if err != nil {
+		return err
+	}
+
+	tx := conn.Begin(&sql.TxOptions{Isolation: sql.LevelRepeatableRead})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
+
+	lock := clause.Locking{Strength: "UPDATE"}
+	var book Book
+	bookErr := tx.Clauses(lock).Select("id").Where("id = ?", hint.BookID).Take(&book).Error
+	if bookErr != nil && !errors.Is(bookErr, gorm.ErrRecordNotFound) {
+		return bookErr
+	}
+
+	// 即使书已消失, 也要区分节点一起被删除和节点仍在但引用已失效.
+	var node Catalogue
+	err = tx.Clauses(lock).Select("id", "book_id", "parent_id", "type", "sort", "display_status").
+		Where("id = ?", c.ID).Take(&node).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return CatalogueNotFoundErr
+	}
+	if err != nil {
+		return err
+	}
+	if node.BookID != hint.BookID {
+		return CatalogueOwnerChangedErr
+	}
+	if bookErr != nil {
+		return BookNotFoundErr
+	}
+
+	err = check(node, c.DisplayStatus)
+	if err != nil {
+		return err
+	}
+	if node.DisplayStatus != c.DisplayStatus {
+		result := tx.Model(&Catalogue{}).Where("id = ? AND book_id = ?", node.ID, node.BookID).
+			UpdateColumn("display_status", c.DisplayStatus)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("catalogue %d display update affected %d rows", node.ID, result.RowsAffected)
+		}
+	}
+	return tx.Commit().Error
 }

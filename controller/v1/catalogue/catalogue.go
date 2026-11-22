@@ -127,3 +127,38 @@ func Reorder(c *gin.Context) {
 	body.Success(map[string]any{})
 	c.JSON(http.StatusOK, body)
 }
+
+// Display 校验请求, 设置单个节点的显示状态并返回统一响应.
+func Display(c *gin.Context) {
+	req := &reqCatalogue.DisplayReq{}
+	body := &resp_body.RespBody{}
+	err := bindCatalogueRequest(c, req)
+	if err != nil {
+		body.ValidateError(err)
+		c.JSON(http.StatusOK, body)
+		return
+	}
+
+	catalogue := &biz.Catalogue{}
+	err = catalogue.Display(c.Request.Context(), req)
+	if err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, sys_error.CatalogueNotFoundErr):
+			body.CatalogueNotFoundError()
+		case errors.Is(err, sys_error.BookNotFoundErr):
+			body.BookNotFoundError()
+		case errors.Is(err, sys_error.CatalogueSortRequiredErr):
+			body.CatalogueSortRequiredError()
+		case errors.As(err, &dbErr):
+			body.DBError(dbErr)
+		default:
+			body.InternalError(err)
+		}
+		c.JSON(http.StatusOK, body)
+		return
+	}
+
+	body.Success(map[string]any{})
+	c.JSON(http.StatusOK, body)
+}

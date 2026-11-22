@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"SolarNotesAdminAPI/enum"
 	"SolarNotesAdminAPI/model"
 	reqCatalogue "SolarNotesAdminAPI/param/req/v1/catalogue"
 	"SolarNotesAdminAPI/sys_error"
@@ -99,4 +100,51 @@ func (c *Catalogue) Reorder(ctx context.Context, req *reqCatalogue.ReorderReq) e
 	default:
 		return &sys_error.DatabaseError{Cause: err}
 	}
+}
+
+// Display 在完整请求的基础上设置节点状态, 由控制器组装成功响应.
+func (c *Catalogue) Display(ctx context.Context, req *reqCatalogue.DisplayReq) error {
+	if c == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Catalogue.Display: nil receiver")}
+	}
+	if ctx == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Catalogue.Display: nil context")}
+	}
+	if req == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Catalogue.Display: nil request")}
+	}
+	if req.Catalogue == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Catalogue.Display: nil catalogue")}
+	}
+
+	orm := &model.Catalogue{ID: req.Catalogue.ID, DisplayStatus: req.Catalogue.DisplayStatus}
+	err := orm.SetDisplayStatus(ctx, c.checkDisplayTarget)
+	var internalErr *sys_error.InternalError
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, model.CatalogueNotFoundErr):
+		return sys_error.CatalogueNotFoundErr
+	case errors.Is(err, model.BookNotFoundErr):
+		return sys_error.BookNotFoundErr
+	case errors.Is(err, sys_error.CatalogueSortRequiredErr), errors.As(err, &internalErr):
+		return err
+	case errors.Is(err, model.CatalogueOwnerChangedErr):
+		return &sys_error.InternalError{Cause: err}
+	default:
+		return &sys_error.DatabaseError{Cause: err}
+	}
+}
+
+// checkDisplayTarget 用锁定行的副本校验目标状态, 保留 DAO 中用于幂等判断的原值.
+func (c *Catalogue) checkDisplayTarget(node model.Catalogue, target string) error {
+	if node.ParentID != 0 && node.Sort == nil && target == enum.DisplayVisible {
+		return sys_error.CatalogueSortRequiredErr
+	}
+	node.DisplayStatus = target
+	err := validateCatalogueRow(&node)
+	if err != nil {
+		return &sys_error.InternalError{Cause: err}
+	}
+	return nil
 }

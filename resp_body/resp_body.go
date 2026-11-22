@@ -128,6 +128,8 @@ const (
 	CatalogueNotFoundCode = 20301
 	// CatalogueOrderChangedCode 表示本层排序快照已失效.
 	CatalogueOrderChangedCode = 20302
+	// CatalogueSortRequiredCode 表示用户请求显示待排序的节点.
+	CatalogueSortRequiredCode = 20303
 )
 
 // CatalogueNotFoundError 返回父目录不存在的统一响应.
@@ -138,6 +140,11 @@ func (r *RespBody) CatalogueNotFoundError() {
 // CatalogueOrderChangedError 提示前端刷新后重新核对目标顺序.
 func (r *RespBody) CatalogueOrderChangedError() {
 	r.failure(CatalogueOrderChangedCode, sys_error.CatalogueOrderChangedErr.Error())
+}
+
+// CatalogueSortRequiredError 提示管理员先保存该节点所在层的阅读顺序.
+func (r *RespBody) CatalogueSortRequiredError() {
+	r.failure(CatalogueSortRequiredCode, sys_error.CatalogueSortRequiredErr.Error())
 }
 
 // ArticlePreviewUnavailableCode 表示已存在的节点暂时无法预览.

@@ -127,6 +127,7 @@ func newRouter(serviceConf conf.Service) (*gin.Engine, error) {
 		v1.POST("/book/options", book.Options)
 		v1.POST("/catalogue/tree", catalogue.Tree)
 		v1.POST("/catalogue/reorder", catalogue.Reorder)
+		v1.POST("/catalogue/display", catalogue.Display)
 		v1.POST("/article/preview", article.Preview)
 	}
 

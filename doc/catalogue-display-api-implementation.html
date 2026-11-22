@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Solar Notes 管理端设置目录节点显示状态的实现方案，含请求及响应、事务加锁、排序约束和联调样例。">
+<title>单独设置一个节点的显示状态 · Solar Notes</title><style>
+    :root {
+      color-scheme: light;
+      --ink: #192f29; --muted: #53665e; --green: #205e49; --line: #cddbd2;
+      --paper: #f7f9f6; --soft: #e7f1e9; --code: #142f29;
+      --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font: 16px/1.8 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    a { color: var(--green); text-underline-offset: .2em; }
+    :focus-visible { outline: 3px solid #247dab; outline-offset: 3px; }
+    .page { max-width: 78rem; margin: auto; padding: 3rem 2.5rem 5rem; display: grid; grid-template-columns: 12rem minmax(0,1fr); gap: 3.75rem; }
+    aside { align-self: start; position: sticky; top: 2rem; }
+    .project { font-weight: 750; letter-spacing: .03em; }
+    nav { display: grid; margin-top: 1rem; border-left: 2px solid var(--line); }
+    nav a { padding: .28rem .85rem; text-decoration: none; }
+    nav a:hover { background: var(--soft); text-decoration: underline; }
+    main { min-width: 0; }
+    header { border-bottom: 1px solid var(--line); padding-bottom: 1.1rem; }
+    .endpoint { color: var(--green); font: 650 .95rem/1.6 var(--mono); }
+    h1 { font-size: clamp(2rem, 4.2vw, 3.15rem); line-height: 1.18; margin: .55rem 0 1rem; }
+    header p { color: var(--muted); }
+    section { margin-top: 2.6rem; scroll-margin-top: 1rem; }
+    h2 { font-size: 1.55rem; line-height: 1.4; margin: 0 0 .65rem; }
+    p { margin: .7rem 0; }
+    :not(pre) > code { font: .9em/1.6 var(--mono); background: var(--soft); padding: .1em .28em; border-radius: .25rem; overflow-wrap: anywhere; }
+    details { margin: 1rem 0; background: white; border: 1px solid var(--line); border-radius: .6rem; overflow: hidden; }
+    summary { padding: .65rem .95rem; cursor: pointer; font-weight: 650; overflow-wrap: anywhere; }
+    summary small { font-weight: 500; color: var(--muted); margin-right: .65rem; }
+    pre { margin: 0; padding: 1.05rem 1.2rem; background: var(--code); color: #f0f7ed; overflow-x: auto; tab-size: 4; }
+    pre code { font: .87rem/1.65 var(--mono); }
+    .copy { display: flex; justify-content: flex-end; padding: .3rem .75rem; border-top: 1px solid var(--line); }
+    .copy button { color: var(--green); background: white; border: 1px solid var(--line); border-radius: .3rem; padding: .22rem .55rem; font: inherit; font-size: .8rem; cursor: pointer; }
+    .note { border-left: 3px solid var(--green); background: var(--soft); padding: .6rem .9rem; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: .5rem; }
+    table { border-collapse: collapse; width: 100%; font-size: .95rem; background: white; }
+    th, td { padding: .65rem .8rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    thead { background: var(--soft); } tbody tr:last-child td { border-bottom: 0; }
+    @media (max-width: 52rem) {
+      .page { display: block; padding: 1rem 1rem 3rem; } aside { position: static; margin-bottom: 1.6rem; }
+      nav { display: flex; flex-wrap: wrap; gap: .15rem .85rem; border: 0; margin-top: .25rem; }
+      nav a { padding: .15rem 0; font-size: .88rem; } th, td { padding: .45rem; }
+    }
+    @media print {
+      .page { display: block; padding: 0; } aside, .copy { display: none; }
+      pre { white-space: pre-wrap; overflow-wrap: anywhere; color: black; background: white; }
+    }
+  
+    .flow { margin: 1.3rem 0; padding: .65rem 1rem; background: var(--soft); border-radius: .45rem; }
+    .flow p { margin: .2rem 0; }
+    h3 { margin: 1.4rem 0 .4rem; font-size: 1.1rem; }
+    .tools button { cursor: pointer; font: inherit; font-size: .9rem; padding: .25rem .75rem; margin-right: .4rem; border: 1px solid var(--line); background: white; color: var(--green); border-radius: .35rem; }
+    .tools { margin-top: .9rem; }
+    .table-wrap td:first-child { min-width: 6rem; }
+    @media print { .tools { display: none; } }
+</style></head><body><div class="page"><aside><div class="project">Solar Notes · 管理 API</div>
+<nav aria-label="本文目录"><a href="#contract">请求与响应</a><a href="#rules">哪些节点可以显示</a><a href="#input">请求 DTO 与业务码</a><a href="#biz">目录业务方法</a><a href="#model">事务与单列更新</a><a href="#http">控制器与路由</a><a href="#verify">联调与并发验收</a></nav></aside>
+<main><header><div class="endpoint">POST /v1/catalogue/display</div><h1>单独设置一个节点的显示状态</h1>
+<p>管理员点击目录开关时，前端发送节点 ID 和明确的目标状态。后端用锁定后的排序值判断能否显示，只更新这个节点的 <code>display_status</code>。文件夹和文件使用同一入口。</p>
+<p><a href="../../SolarNotesAdmin/doc/catalogue-api-design.html#display">目录管理接口设计 · 第 ⑤ 项</a> · <a href="catalogue-reorder-api-implementation.html#transitions">同级排序的显隐规则</a> · <a href="catalogue-tree-api-implementation.html#contract">目录树接口</a></p>
+<div class="tools" hidden><button type="button" data-open="true">展开全部示例</button><button type="button" data-open="false">收起全部示例</button></div></header>
+
+<section id="contract"><h2>传入节点 ID 和目标状态</h2>
+<p>使用 <code>POST /v1/catalogue/display</code>，请求头为 <code>Content-Type: application/json</code> 和 <code>Authorization: Bearer &lt;access_token&gt;</code>。<code>catalogue.id</code> 取自目录树，根节点也传它自己的正数 ID。根节点的 <code>parent_id</code> 才是 <code>0</code>。书籍归属与当前序号由后端查询。</p>
+<details open><summary><small>请求 JSON</small>隐藏第 1 章</summary>
+<pre><code id="sample-request">{
+  "catalogue": {
+    "id": "2123684178049376256",
+    "display_status": "hidden"
+  }
+}</code></pre></details><details open><summary><small>HTTP 200</small>显示状态已生效</summary>
+<pre><code id="sample-success">{
+  "code": 200,
+  "message": "success",
+  "data": {}
+}</code></pre></details>
+<p>示例沿用排序文档中的第一章。假设它目前排第 2，隐藏成功后仍排第 2。要重新显示，用同一个 ID 发送 <code>"display_status": "visible"</code>。前端收到 <code>code=200</code> 时按本次提交的值更新这个开关；请求超时或响应丢失时，用 <code>POST /v1/catalogue/tree</code> 读取最新状态，再决定是否重试。</p>
+</section>
+
+<section id="rules"><h2>按锁定后的 sort 判断</h2>
+<div class="table-wrap"><table><thead><tr><th scope="col">节点当前状态</th><th scope="col">请求 visible</th><th scope="col">请求 hidden</th></tr></thead><tbody>
+<tr><td>根文件夹，<code>parent_id=0</code>，<code>sort=0</code></td><td>成功，保留序号 0。</td><td>成功，保留序号 0。</td></tr>
+<tr><td>已排序的普通文件夹或文件，<code>sort&gt;0</code></td><td>成功，保留当前序号。</td><td>成功，保留当前序号。</td></tr>
+<tr><td>待排序的普通文件夹或文件，<code>sort=NULL</code></td><td>返回 <code>20303</code>。先用排序接口将其排入阅读顺序。</td><td>成功，保留 <code>NULL</code>。待排项本来就是隐藏时跳过更新。</td></tr>
+</tbody></table></div>
+<p>合法目标已经生效时直接成功。隐藏文件夹只会更新这个节点的显示状态，子孙节点和书籍各自保存的显隐值都会保留。已排进度按 <code>sort</code> 统计，切换开关不改变进度。原型会禁用待排节点的开关；服务端仍检查直接调用 API 的请求。<a href="../../SolarNotesAdmin/doc/catalogue-management-prototype.html#children-list">目录管理原型</a>。</p>
+</section>
+
+<section id="input"><h2>复用现有校验与响应包装器</h2>
+<p>新建请求 DTO。<code>json:"id,string"</code> 直接把十进制字符串读入 <code>int64</code>，避免前端对雪花 ID 做数值转换。<code>binding:"required,oneof=visible hidden"</code> 由 Gin 校验，区分大小写。客户端每次指定要保存的状态，因此重复提交同一值也有确定的结果。</p>
+<details><summary><small>新建完整文件</small>param/req/v1/catalogue/display.go</summary>
+<pre><code id="sample-req" data-path="param/req/v1/catalogue/display.go">package catalogue
+
+// DisplayReq 指定单个目录节点的目标显示状态.
+type DisplayReq struct {
+	Catalogue *DisplayCatalogueReq `json:"catalogue" binding:"required"` // Catalogue 是必填的目标节点.
+}
+
+// DisplayCatalogueReq 保存目录主键及要设置的状态.
+type DisplayCatalogueReq struct {
+	ID            int64  `json:"id,string" binding:"gt=0"`                               // ID 是目录树中节点的十进制字符串 ID.
+	DisplayStatus string `json:"display_status" binding:"required,oneof=visible hidden"` // DisplayStatus 是本次请求的目标值.
+}</code></pre></details>
+<p>在 <code>sys_error/catalogue_error.go</code> 增加排序前置条件错误，在 <code>resp_body/resp_body.go</code> 集中登记业务码与响应方法。响应均沿用 HTTP 200 和 <code>data: {}</code>。</p>
+<details><summary><small>追加到现有文件</small>sys_error/catalogue_error.go</summary>
+<pre><code id="sample-err" data-path="sys_error/catalogue_error.go">// CatalogueSortRequiredErr 表示普通节点需要先排入阅读顺序才能显示.
+var CatalogueSortRequiredErr = errors.New("请先为该节点排序, 再设置为显示")</code></pre></details><details><summary><small>追加到现有文件</small>resp_body/resp_body.go</summary>
+<pre><code id="sample-resp" data-path="resp_body/resp_body.go">// CatalogueSortRequiredCode 表示用户请求显示待排序的节点.
+const CatalogueSortRequiredCode = 20303
+
+// CatalogueSortRequiredError 提示管理员先保存该节点所在层的阅读顺序.
+func (r *RespBody) CatalogueSortRequiredError() {
+	r.failure(CatalogueSortRequiredCode, sys_error.CatalogueSortRequiredErr.Error())
+}</code></pre></details>
+<div class="table-wrap"><table><thead><tr><th scope="col">响应体 code</th><th scope="col">触发条件</th></tr></thead><tbody>
+<tr><td><code>200</code></td><td>目标状态已生效，包括重复设置。</td></tr>
+<tr><td><code>10101</code></td><td>请求对象、ID 或枚举不合法，例如缺少节点、发送数值 ID、ID 小于等于 0 或发送 <code>"Visible"</code>。</td></tr>
+<tr><td><code>20003 / 20004</code></td><td>管理员令牌已过期 / 缺失、无效或已撤销，复用全局鉴权。</td></tr>
+<tr><td><code>20301</code></td><td>预查或加锁复查时，目标目录节点已不存在。</td></tr>
+<tr><td><strong><code>20303</code></strong></td><td>新增。要求显示仍待排序的普通节点。</td></tr>
+<tr><td><code>20202</code></td><td>节点仍在且仍属于原书，但对应的书籍行已不存在。复用项目现有的书籍错误。</td></tr>
+<tr><td><code>10201 / 500</code></td><td>查询、更新或提交事务失败时返回 <code>10201</code>。锁定后发现节点所属书籍与预查不一致、内部调用或节点结构异常时返回 <code>500</code>。</td></tr>
+</tbody></table></div>
+<details open><summary><small>HTTP 200</small>显示待排序节点时的业务响应</summary>
+<pre><code id="sample-failure">{
+  "code": 20303,
+  "message": "请先为该节点排序, 再设置为显示",
+  "data": {}
+}</code></pre></details>
+</section>
+
+<section id="biz"><h2>把显隐规则放在 biz.Catalogue 中</h2>
+<p>将 <code>Display</code> 和 <code>checkDisplayTarget</code> 追加到现有的 <code>biz/catalogue.go</code>。前者接收完整的 <code>*reqCatalogue.DisplayReq</code>，后者作为具名方法交给 DAO，在取得节点行锁后执行。与排序接口的 <code>plan.changes</code> 用法一致。<a href="../biz/catalogue.go">当前目录业务实体</a>。</p>
+<p>复用 <code>validateCatalogueRow</code> 检查应用目标状态后的节点。传入的是行值副本，替换副本的 <code>DisplayStatus</code> 不影响 DAO 比较原值。先判断“普通待排节点请求显示”，再判断是否已经是目标状态。这样即使存量数据里有待排但可见的异常行，也不会误报显示成功；设为隐藏可以恢复它。根的类型或序号损坏、普通节点使用 0 等结构异常归为内部错误。<a href="../biz/catalogue_node.go">现有的行校验</a>。</p>
+<details open><summary><small>加入现有 import 块</small>biz/catalogue.go</summary>
+<pre><code id="sample-enum-import" data-path="biz/catalogue.go">"SolarNotesAdminAPI/enum"</code></pre></details><details><summary><small>追加到现有文件</small>biz/catalogue.go</summary>
+<pre><code id="sample-biz" data-path="biz/catalogue.go">// Display 在完整请求的基础上设置节点状态, 由控制器组装成功响应.
+func (c *Catalogue) Display(ctx context.Context, req *reqCatalogue.DisplayReq) error {
+	if c == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Catalogue.Display: nil receiver")}
+	}
+	if ctx == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Catalogue.Display: nil context")}
+	}
+	if req == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Catalogue.Display: nil request")}
+	}
+	if req.Catalogue == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Catalogue.Display: nil catalogue")}
+	}
+
+	orm := &amp;model.Catalogue{ID: req.Catalogue.ID, DisplayStatus: req.Catalogue.DisplayStatus}
+	err := orm.SetDisplayStatus(ctx, c.checkDisplayTarget)
+	var internalErr *sys_error.InternalError
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, model.CatalogueNotFoundErr):
+		return sys_error.CatalogueNotFoundErr
+	case errors.Is(err, model.BookNotFoundErr):
+		return sys_error.BookNotFoundErr
+	case errors.Is(err, sys_error.CatalogueSortRequiredErr), errors.As(err, &amp;internalErr):
+		return err
+	case errors.Is(err, model.CatalogueOwnerChangedErr):
+		return &amp;sys_error.InternalError{Cause: err}
+	default:
+		return &amp;sys_error.DatabaseError{Cause: err}
+	}
+}
+
+// checkDisplayTarget 用锁定行的副本校验目标状态, 保留 DAO 中用于幂等判断的原值.
+func (c *Catalogue) checkDisplayTarget(node model.Catalogue, target string) error {
+	if node.ParentID != 0 &amp;&amp; node.Sort == nil &amp;&amp; target == enum.DisplayVisible {
+		return sys_error.CatalogueSortRequiredErr
+	}
+	node.DisplayStatus = target
+	err := validateCatalogueRow(&amp;node)
+	if err != nil {
+		return &amp;sys_error.InternalError{Cause: err}
+	}
+	return nil
+}</code></pre></details>
+</section>
+
+<section id="model"><h2>先锁书籍，再锁节点，最后更新一列</h2>
+<p>将下面的错误和 <code>SetDisplayStatus</code> 方法追加到现有 <code>model/catalogue.go</code>。接收者的 <code>ID</code> 和 <code>DisplayStatus</code> 指定目标节点和状态，事务中的 <code>node</code> 保存锁定后的当前值。该文件已有示例使用的全部导入。<a href="../model/catalogue.go">现有的目录模型与排序事务</a>。</p>
+<ol><li>按节点 ID 普通读取 <code>book_id</code>，只确定要锁哪本书。开始事务后，依次对 <code>book.id</code> 和 <code>catalogue.id</code> 做 <code>SELECT ... FOR UPDATE</code>，复核节点是否还在、是否仍属于这本书。</li>
+<li>把锁定行送给业务方法校验。通过后才比较当前状态与目标；相同则提交事务，省去 <code>UPDATE</code>。状态有变化时执行 <code>UPDATE catalogue SET display_status = ? WHERE id = ? AND book_id = ?</code>，核对影响一行后提交。数据库若配置了自动维护的 <code>updated_at</code>，实际变更时由数据库维护。</li>
+<li>每个请求最多开启一个写事务。若锁定后发现 <code>book_id</code> 与预查不一致，立即返回 <code>CatalogueOwnerChangedErr</code>，由 <code>defer tx.Rollback()</code> 回滚。业务层将其映射为内部错误，响应体的 <code>code</code> 为 <code>500</code>。</li></ol>
+<p>这里与 <code>ReorderChildren</code> 共用“先书籍、后目录”的锁顺序。同一本书的两种写操作会在书籍行上串行；单节点显隐只需要在取得书籍锁后读取目标节点。InnoDB 的锁定读在取得锁后读取当前记录。<a href="https://dev.mysql.com/doc/refman/8.4/en/innodb-locking-reads.html">MySQL 8.4 锁定读</a>。</p>
+<details><summary><small>追加到现有文件</small>model/catalogue.go</summary>
+<pre><code id="sample-model" data-path="model/catalogue.go">// CatalogueOwnerChangedErr 表示预查的所属书籍与锁定节点的当前归属不同.
+var CatalogueOwnerChangedErr = errors.New("catalogue ownership changed during display update")
+
+// SetDisplayStatus 按节点 ID 定位书籍, 在同一事务中依次锁书和节点, 校验并设置显隐.
+func (c *Catalogue) SetDisplayStatus(ctx context.Context, check func(Catalogue, string) error) error {
+	if c == nil {
+		return errors.New("model.Catalogue.SetDisplayStatus: nil receiver")
+	}
+	if ctx == nil {
+		return errors.New("model.Catalogue.SetDisplayStatus: nil context")
+	}
+	if check == nil {
+		return errors.New("model.Catalogue.SetDisplayStatus: missing display rule")
+	}
+	if db.DB == nil {
+		return errors.New("database is not initialized")
+	}
+	conn := db.DB.WithContext(ctx)
+	var hint Catalogue
+	err := conn.Select("book_id").Where("id = ?", c.ID).Take(&amp;hint).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return CatalogueNotFoundErr
+	}
+	if err != nil {
+		return err
+	}
+
+	tx := conn.Begin(&amp;sql.TxOptions{Isolation: sql.LevelRepeatableRead})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
+
+	lock := clause.Locking{Strength: "UPDATE"}
+	var book Book
+	bookErr := tx.Clauses(lock).Select("id").Where("id = ?", hint.BookID).Take(&amp;book).Error
+	if bookErr != nil &amp;&amp; !errors.Is(bookErr, gorm.ErrRecordNotFound) {
+		return bookErr
+	}
+
+	// 即使书已消失, 也要区分节点一起被删除和节点仍在但引用已失效.
+	var node Catalogue
+	err = tx.Clauses(lock).Select("id", "book_id", "parent_id", "type", "sort", "display_status").
+		Where("id = ?", c.ID).Take(&amp;node).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return CatalogueNotFoundErr
+	}
+	if err != nil {
+		return err
+	}
+	if node.BookID != hint.BookID {
+		return CatalogueOwnerChangedErr
+	}
+	if bookErr != nil {
+		return BookNotFoundErr
+	}
+
+	err = check(node, c.DisplayStatus)
+	if err != nil {
+		return err
+	}
+	if node.DisplayStatus != c.DisplayStatus {
+		result := tx.Model(&amp;Catalogue{}).Where("id = ? AND book_id = ?", node.ID, node.BookID).
+			UpdateColumn("display_status", c.DisplayStatus)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("catalogue %d display update affected %d rows", node.ID, result.RowsAffected)
+		}
+	}
+	return tx.Commit().Error
+}</code></pre></details>
+</section>
+
+<section id="http"><h2>追加控制器方法与鉴权路由</h2>
+<p>将 <code>Display</code> 追加到 <code>controller/v1/catalogue/catalogue.go</code>，复用 <code>bindCatalogueRequest</code> 校验单个完整 JSON 对象及 DTO 标签。控制器只将错误映射到已有包装器，成功时返回空对象。该文件已有示例使用的全部导入。<a href="../controller/v1/catalogue/catalogue.go">现有目录控制器</a>。</p>
+<details><summary><small>追加到现有文件</small>controller/v1/catalogue/catalogue.go</summary>
+<pre><code id="sample-controller" data-path="controller/v1/catalogue/catalogue.go">// Display 校验请求, 设置单个节点的显示状态并返回统一响应.
+func Display(c *gin.Context) {
+	req := &amp;reqCatalogue.DisplayReq{}
+	body := &amp;resp_body.RespBody{}
+	err := bindCatalogueRequest(c, req)
+	if err != nil {
+		body.ValidateError(err)
+		c.JSON(http.StatusOK, body)
+		return
+	}
+
+	catalogue := &amp;biz.Catalogue{}
+	err = catalogue.Display(c.Request.Context(), req)
+	if err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, sys_error.CatalogueNotFoundErr):
+			body.CatalogueNotFoundError()
+		case errors.Is(err, sys_error.BookNotFoundErr):
+			body.BookNotFoundError()
+		case errors.Is(err, sys_error.CatalogueSortRequiredErr):
+			body.CatalogueSortRequiredError()
+		case errors.As(err, &amp;dbErr):
+			body.DBError(dbErr)
+		default:
+			body.InternalError(err)
+		}
+		c.JSON(http.StatusOK, body)
+		return
+	}
+
+	body.Success(map[string]any{})
+	c.JSON(http.StatusOK, body)
+}</code></pre></details><details open><summary><small>追加到现有 v1 路由组</small>main.go · newRouter</summary>
+<pre><code id="sample-route" data-path="main.go">v1.POST("/catalogue/display", catalogue.Display)</code></pre></details>
+<p>在 <code>main.go</code> 的 <code>newRouter</code> 中，将路由追加到已有的 <code>v1</code> 分组。继续使用 <code>adminAuth.Handle</code> 和全局请求体大小限制，登录路由仍是唯一的免鉴权项。此次沿用 <code>catalogue.sort</code>、<code>catalogue.display_status</code> 和现有索引，开发步骤不涉及表结构变更。</p>
+</section>
+
+<section id="verify"><h2>联调与并发验收</h2>
+<p>在隔离的测试数据中准备一本书、一个根文件夹、一个已排文件夹及其子文件、一个同级已排节点和一个待排节点。先用 <code>/v1/catalogue/tree</code> 记下这些行的 ID、排序与显示状态，再用 Postman 的 <code>Bearer Token</code> 和 <code>raw → JSON</code> 发送首节请求。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">操作</th><th scope="col">用目录树或数据库复核</th></tr></thead><tbody>
+<tr><td>隐藏序号为 2 的文件夹，重复隐藏，再显示。</td><td>三次均为 <code>200</code>。序号始终为 2；子文件、同级节点和书籍均保持原值。重复隐藏时不执行更新。</td></tr>
+<tr><td>分别隐藏和显示根节点；对隐藏书中的已排文件请求显示。</td><td>根节点两次均成功，序号仍为 0。文件可独立显示，书籍本身依旧隐藏。</td></tr>
+<tr><td>对待排文件或文件夹先请求显示，再请求隐藏。</td><td>依次得到 <code>20303</code> 和 <code>200</code>。最终仍是 <code>NULL / hidden</code>。</td></tr>
+<tr><td>已有同层排序快照。甲先手动隐藏已排节点，乙再用该快照将它移到另一个已排位置。</td><td>两次都成功。节点采用新序号并保留手动隐藏，仅改显隐不会让排序快照失效。</td></tr>
+<tr><td>甲先通过排序将节点移回待排区，乙再请求显示；随后交换两个操作的提交顺序做对照。</td><td>排序先提交时，显示请求看到 <code>NULL</code>，返回 <code>20303</code>。显示先提交时，两次都可成功，最终由排序写为 <code>NULL / hidden</code>。</td></tr>
+<tr><td>两个管理员为同一个已排节点提交不同的合法目标。</td><td>两个请求均可成功，最终值等于最后提交的目标。可在一个事务持有书籍锁时发起另一个请求，确认它在锁释放后使用最新行。</td></tr>
+<tr><td>在隔离测试中，让节点的 <code>book_id</code> 在预查之后、取得书籍锁之前发生变化。</td><td>请求只定位一次，锁后复核失败即回滚，响应体 <code>code=500</code>。目标节点保留原显示状态。</td></tr>
+<tr><td>按已删除的节点 ID 提交；传数值 ID、未知状态、缺少 <code>catalogue</code>、连续两个 JSON 对象；使用无效或过期令牌。</td><td>节点缺失返回 <code>20301</code>；参数问题返回 <code>10101</code>；令牌返回 <code>20004</code> 或 <code>20003</code>。错误响应的 <code>data</code> 都是空对象。</td></tr>
+</tbody></table></div>
+<p>成功后按请求中的目标更新对应开关即可。若另一人随后编排或切换同一节点，以再次读取的目录树为准。</p></section></main>
+</div><script>
+  const controls = document.querySelector('.tools');
+  controls.hidden = false;
+  controls.addEventListener('click', (event) => {
+    const choice = event.target.dataset.open;
+    if (choice === undefined) return;
+    for (const panel of document.querySelectorAll('main details')) panel.open = choice === 'true';
+  });
+  for (const block of document.querySelectorAll('details pre code')) {
+    const toolbar = document.createElement('div');
+    toolbar.className = 'copy';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = '复制代码';
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(block.textContent);
+        button.textContent = '已复制';
+      } catch {
+        const range = document.createRange();
+        range.selectNodeContents(block);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        button.textContent = '已选中，请手动复制';
+      }
+    });
+    toolbar.append(button);
+    block.closest('details').append(toolbar);
+  }
+</script></body></html>
