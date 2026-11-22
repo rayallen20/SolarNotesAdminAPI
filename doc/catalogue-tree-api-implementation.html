@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Solar Notes 管理后台目录树读取接口的业务设计、完整 Go 示例和验收场景。">
+  <title>读取一本书的完整目录树 · Solar Notes</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #192f29; --muted: #53665e; --green: #205e49; --line: #cddbd2;
+      --paper: #f7f9f6; --soft: #e7f1e9; --code: #142f29;
+      --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font: 16px/1.8 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    a { color: var(--green); text-underline-offset: .2em; }
+    :focus-visible { outline: 3px solid #247dab; outline-offset: 3px; }
+    .page { max-width: 78rem; margin: auto; padding: 3rem 2.5rem 5rem; display: grid; grid-template-columns: 12rem minmax(0,1fr); gap: 3.75rem; }
+    aside { align-self: start; position: sticky; top: 2rem; }
+    .project { font-weight: 750; letter-spacing: .03em; }
+    nav { display: grid; margin-top: 1rem; border-left: 2px solid var(--line); }
+    nav a { padding: .28rem .85rem; text-decoration: none; }
+    nav a:hover { background: var(--soft); text-decoration: underline; }
+    main { min-width: 0; }
+    header { border-bottom: 1px solid var(--line); padding-bottom: 1.1rem; }
+    .endpoint { color: var(--green); font: 650 .95rem/1.6 var(--mono); }
+    h1 { font-size: clamp(2rem, 4.2vw, 3.15rem); line-height: 1.18; margin: .55rem 0 1rem; }
+    header p { color: var(--muted); }
+    section { margin-top: 2.6rem; scroll-margin-top: 1rem; }
+    h2 { font-size: 1.55rem; line-height: 1.4; margin: 0 0 .65rem; }
+    p { margin: .7rem 0; }
+    :not(pre) > code { font: .9em/1.6 var(--mono); background: var(--soft); padding: .1em .28em; border-radius: .25rem; overflow-wrap: anywhere; }
+    details { margin: 1rem 0; background: white; border: 1px solid var(--line); border-radius: .6rem; overflow: hidden; }
+    summary { padding: .65rem .95rem; cursor: pointer; font-weight: 650; overflow-wrap: anywhere; }
+    summary small { font-weight: 500; color: var(--muted); margin-right: .65rem; }
+    pre { margin: 0; padding: 1.05rem 1.2rem; background: var(--code); color: #f0f7ed; overflow-x: auto; tab-size: 4; }
+    pre code { font: .87rem/1.65 var(--mono); }
+    .copy { display: flex; justify-content: flex-end; padding: .3rem .75rem; border-top: 1px solid var(--line); }
+    .copy button { color: var(--green); background: white; border: 1px solid var(--line); border-radius: .3rem; padding: .22rem .55rem; font: inherit; font-size: .8rem; cursor: pointer; }
+    .note { border-left: 3px solid var(--green); background: var(--soft); padding: .6rem .9rem; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: .5rem; }
+    table { border-collapse: collapse; width: 100%; font-size: .95rem; background: white; }
+    th, td { padding: .65rem .8rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    thead { background: var(--soft); } tbody tr:last-child td { border-bottom: 0; }
+    @media (max-width: 52rem) {
+      .page { display: block; padding: 1rem 1rem 3rem; } aside { position: static; margin-bottom: 1.6rem; }
+      nav { display: flex; flex-wrap: wrap; gap: .15rem .85rem; border: 0; margin-top: .25rem; }
+      nav a { padding: .15rem 0; font-size: .88rem; } th, td { padding: .45rem; }
+    }
+    @media print {
+      .page { display: block; padding: 0; } aside, .copy { display: none; }
+      pre { white-space: pre-wrap; overflow-wrap: anywhere; color: black; background: white; }
+    }
+  
+    .flow { margin: 1.3rem 0; padding: .65rem 1rem; background: var(--soft); border-radius: .45rem; }
+    .flow p { margin: .2rem 0; }
+    h3 { margin: 1.4rem 0 .4rem; font-size: 1.1rem; }
+    .tools button { cursor: pointer; font: inherit; font-size: .9rem; padding: .25rem .75rem; margin-right: .4rem; border: 1px solid var(--line); background: white; color: var(--green); border-radius: .35rem; }
+    .tools { margin-top: .9rem; }
+    .table-wrap td:first-child { min-width: 6rem; }
+    @media print { .tools { display: none; } }
+</style></head>
+<body><div class="page"><aside><div class="project">Solar Notes · 管理 API</div>
+<nav aria-label="本文目录"><a href="#contract">请求与响应</a><a href="#database">实际数据</a><a href="#design">业务层设计</a><a href="#dto">请求与响应类型</a><a href="#model">数据库快照</a><a href="#assembly">组树与排序</a><a href="#controller">控制器与路由</a><a href="#verify">联调验收</a></nav></aside>
+<main><header><div class="endpoint">POST /v1/catalogue/tree</div>
+<h1>读取一本书的完整目录树</h1>
+<p>管理员从书籍下拉框选中一本书后，接口一次返回书籍摘要和整棵目录树。前端可用同一份结果展开目录、展示直接子项、计算全书编排进度。</p>
+<p><a href="../../SolarNotesAdmin/doc/catalogue-api-design.html#tree">前端接口设计 · 第 ③ 项</a> · <a href="../../SolarNotesAdmin/doc/catalogue-management-prototype.html#catalogue-panels">目录管理原型</a> · <a href="book-options-api-implementation.html#contract">上一步的书籍选项接口</a></p>
+<div class="tools" hidden><button type="button" data-open="true">展开全部示例</button><button type="button" data-open="false">收起全部示例</button></div>
+</header><section id="contract"><h2>请求与响应</h2>
+<p>从 <code>POST /v1/book/options</code> 返回的选项取得书籍 ID。请求使用 <code>Authorization: Bearer &lt;access_token&gt;</code> 和 <code>Content-Type: application/json</code>。Body 顶层只有业务所需的 <code>book</code> 对象，查询范围由 <code>book.id</code> 确定。所有 ID 在 JSON 中按十进制字符串传输。</p><details open><summary><small>请求 JSON</small>读取实际书籍</summary>
+<pre><code id="tree-request">{
+  "book": {
+    "id": "2123435620763176960"
+  }
+}</code></pre></details>
+<p>下面用另一本虚构的两项小书展示完整成功响应。书籍隐藏时，管理端仍能看到其目录；根可见、子项隐藏，各自保留自己的状态。</p><details><summary><small>响应 JSON</small>含空文件夹和待排文件的完整小树</summary>
+<pre><code id="tree-response">{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "book": {
+      "id": "9007199254741001",
+      "title": "观测笔记",
+      "sort": 1,
+      "display_status": "hidden",
+      "catalogues": [
+        {
+          "id": "9007199254741010",
+          "parent_id": "0",
+          "name": "观测笔记",
+          "type": "folder",
+          "sort": 0,
+          "display_status": "visible",
+          "children": [
+            {
+              "id": "9007199254741011",
+              "parent_id": "9007199254741010",
+              "name": "入门",
+              "type": "folder",
+              "sort": 1,
+              "display_status": "hidden",
+              "children": []
+            },
+            {
+              "id": "9007199254741012",
+              "parent_id": "9007199254741010",
+              "name": "第2节.md",
+              "type": "file",
+              "sort": null,
+              "display_status": "hidden",
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  }
+}</code></pre></details>
+<div class="table-wrap"><table><thead><tr><th scope="col">书籍及目录状态</th><th scope="col">业务码</th><th scope="col">data 的形状</th></tr></thead><tbody>
+<tr><td>书籍存在，已导入目录</td><td><code>200</code></td><td><code>book.catalogues</code> 恰有一个根节点；根的 <code>parent_id</code> 为 <code>"0"</code>、<code>sort</code> 为 <code>0</code>。</td></tr>
+<tr><td>书籍存在，尚未导入</td><td><code>200</code></td><td><code>book</code> 的四个摘要字段照常返回，<code>catalogues: []</code>。</td></tr>
+<tr><td>所选书籍已删除</td><td><code>20202</code></td><td><code>{}</code>。前端重新读取当前天体的书籍选项。</td></tr>
+</tbody></table></div>
+<p>文件和空文件夹都返回 <code>children: []</code>，前端依 <code>type</code> 区分。待排序节点必须保留 <code>"sort": null</code>。点击文件预览时使用目录节点的 <code>id</code>；本接口的响应只包含元数据。</p></section>
+<section id="database"><h2>用现有数据核对模型</h2>
+<p>此前对 <code>solar_notes</code> 只读核对时，书籍《MySQL是怎样运行的》的 ID 为 <code>2123435620763176960</code>，状态为 <code>visible</code>，书籍排序为 <code>1</code>。</p><div class="table-wrap"><table><thead><tr><th scope="col">数据库事实</th><th scope="col">对实现的影响</th></tr></thead><tbody>
+<tr><td><code>book.sort</code> 是 <code>INT UNSIGNED NOT NULL</code>；<code>catalogue.sort</code> 是 <code>INT UNSIGNED DEFAULT NULL</code>。</td><td>书籍排序使用 <code>uint32</code>；目录模型、业务实体和节点响应 DTO 均使用 <code>*uint32</code>。根指向 0，已排序子节点的范围为 1 至 4294967295，待排序子节点为 nil。</td></tr>
+<tr><td>根目录 ID 为 <code>2123684178040987648</code>，<code>parent_id = 0</code>，<code>type = folder</code>。</td><td>数据库用整数 0 标识根，序列化后 <code>parent_id</code> 是字符串 <code>"0"</code>。</td></tr>
+<tr><td>全书 59 个节点：1 个可见根文件夹、20 个隐藏子文件夹、38 个隐藏文件。58 个非根节点均待排序，其中有 2 个空文件夹。</td><td>遍历响应应得到 59 个节点。当前样本的编排进度为 <code>0 / 58</code>，前端只统计非根节点。</td></tr>
+<tr><td>文件节点名称实际包含 <code>0. 大致过程.md</code>。<code>article.catalogue_id</code> 上有唯一索引。</td><td>原样返回 <code>catalogue.name</code>。文件类型取自 <code>catalogue.type</code>，无需拼接扩展名或联查 <code>article.path</code>。</td></tr>
+<tr><td>已生效的 <code>chk_catalogue_sort_by_parent</code> 检查父节点与排序值。</td><td>根节点的排序值必须为 0；非根节点允许 NULL 或正数。组树时仍校验待排序节点的显隐和根节点类型，这两个条件由业务层负责。</td></tr>
+<tr><td>现有唯一索引为 <code>uk_book_parent_sort(book_id, parent_id, sort)</code>，表使用 InnoDB。</td><td>按书籍查目录可使用索引左前缀。多条待排记录可共存；父节点属于同一本书、树无环等关系仍须在组装时确认。</td></tr>
+</tbody></table></div>
+<p>此前只读核对这本书时，目录共有 1 个根、21 个文件夹（含根）和 38 个文件，合计 59 个节点。从根算第 1 层，最深为第 7 层。</p>
+<h3 id="sort-mapping">程序侧的三个排序字段</h3>
+<p>将 <a href="../model/catalogue.go">model.Catalogue.Sort</a>、<a href="../biz/catalogue.go">biz.Catalogue.Sort</a> 和 <a href="../param/resp/v1/catalogue/tree.go">TreeNodeResp.Sort</a> 统一声明为 <code>*uint32</code>。原模型的有符号 32 位整数在读取 <code>2147483648</code> 起的值时会报错。指针保留数据库 NULL；响应标签继续使用 <code>json:"sort"</code>，这样待排序节点会显式返回 <code>"sort": null</code>。</p>
+<p>目录树请求只接收 <code>book.id</code>；成功响应仍用 JSON 数字传送排序值，JavaScript 的 <code>number</code> 可以精确表示全部 uint32 值。书籍摘要中的 <code>TreeBookResp.Sort</code> 对应另一个非空列，继续使用 <code>uint32</code>。</p></section>
+<section id="design"><h2>业务层的入口和返回值</h2>
+<div class="flow"><p><strong>建议入口</strong>　<code>(*biz.Catalogue).Tree(ctx, req) (*biz.Book, []*biz.Catalogue, error)</code></p><p><strong>调用顺序</strong>　控制器绑定请求 → 模型读取书籍和目录行 → 业务层挂接、校验、排序 → 控制器转换响应 DTO。</p></div><p><code>biz.Book</code> 和 <code>biz.Catalogue</code> 是独立的业务实体。一次成功调用返回书籍摘要和该书的根节点切片。即使目录行数为零，第一个返回值仍是查询到的书籍，第二个是空切片。若书籍不存在，则两个数据返回值均为 nil，同时返回书籍不存在错误。</p><p>数据库层用 <code>catalogue.book_id</code> 确定归属，业务节点只保存 <code>Parent</code> 和 <code>Children</code> 两种节点间关系。根的 <code>Parent == nil</code>，每个子节点的 <code>Parent</code> 都指向其直接父节点。书籍摘要直接从本次快照映射。已有 <code>biz.Book.fillByORM</code> 面向同时加载天体的记录，读树只需要书籍自身的四个字段。<code>biz</code> 处理树的有效性和顺序；控制器负责把数值 ID 转成字符串、构造响应对象并调用 <code>RespBody.Success</code>。</p><div class="table-wrap"><table><thead><tr><th scope="col">实现文件</th><th scope="col">职责</th></tr></thead><tbody>
+<tr><td><code>model/catalogue.go</code></td><td>定义数据库行并执行两次查询。</td></tr>
+<tr><td><a href="../biz/catalogue.go">biz/catalogue.go</a></td><td>定义目录业务实体 <code>Catalogue</code> 及其 <code>Tree</code> 方法。该方法返回书籍摘要和目录根列表，并映射业务错误。</td></tr>
+<tr><td><a href="../enum/enum.go">enum/enum.go</a></td><td>复用节点类型与显隐状态常量。<code>TypeFolder</code> 表示文件夹，可包含零个子项；<code>TypeFile</code> 表示文件。</td></tr>
+<tr><td><code>biz/catalogue_node.go</code></td><td>从目录行填充现有节点，校验数据并建立父子双向关系。</td></tr>
+<tr><td><code>biz/catalogue_order.go</code></td><td>集中定义同一父节点下的排序规则。</td></tr>
+<tr><td><code>controller/v1/catalogue/catalogue.go</code></td><td>读取请求，递归生成 DTO，并写入统一响应。</td></tr>
+</tbody></table></div>
+</section>
+<section id="dto"><h2>定义请求对象和递归响应 DTO</h2>
+<p><code>book</code> 指针配合 <code>required</code> 区分缺失或 <code>null</code>；<code>id,string</code> 读取字符串形式的书籍 ID，<code>gt=0</code> 排除未赋值、零和负数。数值型 JSON ID 或超出 <code>int64</code> 范围的字符串在解码时失败。</p><details><summary><small>已有请求定义</small>param/req/v1/catalogue/tree.go</summary>
+<pre><code id="dto-in" data-path="param/req/v1/catalogue/tree.go" data-mode="new">package catalogue
+
+// TreeReq 定义读取整本书目录树的请求.
+type TreeReq struct {
+	Book *TreeBookReq `json:"book" binding:"required"` // Book 标识当前选择的书籍.
+}
+
+// TreeBookReq 只接收书籍的十进制字符串 ID.
+type TreeBookReq struct {
+	ID int64 `json:"id,string" binding:"gt=0"` // ID 必须是 int64 范围内的正数.
+}</code></pre></details>
+<p><code>TreeBookResp</code> 包含书籍摘要与根数组，<code>TreeNodeResp.Children</code> 递归使用自身类型。<code>Sort</code> 和两个数组字段都需要显式出现在 JSON 中，保留 <code>null</code> 或 <code>[]</code> 供前端区分状态。</p><details><summary><small>已有文件 · 核对节点 Sort</small>param/resp/v1/catalogue/tree.go</summary>
+<pre><code id="dto-out" data-path="param/resp/v1/catalogue/tree.go" data-mode="new">package catalogue
+
+// TreeBookResp 是 data.book 的内容.
+type TreeBookResp struct {
+	ID            string          `json:"id"`             // ID 为书籍雪花 ID 的十进制字符串.
+	Title         string          `json:"title"`          // Title 为当前书名.
+	Sort          uint32          `json:"sort"`           // Sort 为书籍在所属天体中的排序值.
+	DisplayStatus string          `json:"display_status"` // DisplayStatus 为书籍自身的状态.
+	Catalogues    []*TreeNodeResp `json:"catalogues"`     // Catalogues 保存零个或一个根节点.
+}
+
+// TreeNodeResp 是同一结构递归嵌套的目录节点.
+type TreeNodeResp struct {
+	ID            string          `json:"id"`             // ID 是目录节点 ID, 文件预览也使用此 ID.
+	ParentID      string          `json:"parent_id"`      // ParentID 为直接父节点 ID, 根节点为 "0".
+	Name          string          `json:"name"`           // Name 原样保留库中的显示名称.
+	Type          string          `json:"type"`           // Type 为 folder 或 file.
+	Sort          *uint32         `json:"sort"`           // Sort 为 nil 时编码为 JSON null.
+	DisplayStatus string          `json:"display_status"` // DisplayStatus 是节点自身的状态.
+	Children      []*TreeNodeResp `json:"children"`       // Children 是全部直接子项, 无子项时为 [].
+}</code></pre></details>
+</section>
+<section id="model"><h2>在同一快照读取书籍与目录行</h2>
+<p>沿用 <code>model.Book.OptionsByPlanetID</code> 的只读可重复读事务。先按主键取书籍摘要，再用 <code>WHERE book_id = ?</code> 取该书全部目录。两次查询共用 <code>tx</code>，使并发导入或删除时读到的书籍与目录属于同一快照。记录读完即提交，再到内存组树。查询包含 <code>intro</code>，用于填充现有业务实体的 <code>Intro</code>；接口③的节点 DTO 仅输出约定的展示字段。</p><p>复用 <a href="../model/book.go">model/book.go</a> 已声明的 <code>model.BookNotFoundErr</code>。</p>
+<details><summary><small>已有文件 · 核对模型 Sort</small>model/catalogue.go</summary>
+<pre><code id="model-catalogue" data-path="model/catalogue.go" data-mode="new">package model
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+
+	"SolarNotesAdminAPI/db"
+
+	"gorm.io/gorm"
+)
+
+// Catalogue 映射读树使用的 catalogue 表字段.
+type Catalogue struct {
+	ID            int64   `gorm:"column:id;primaryKey;autoIncrement:false"` // ID 为目录节点主键.
+	BookID        int64   `gorm:"column:book_id"`                           // BookID 为所属书籍.
+	ParentID      int64   `gorm:"column:parent_id"`                         // ParentID 为直接父节点 ID, 根节点为 0.
+	Name          string  `gorm:"column:name"`                              // Name 为节点显示名.
+	Intro         string  `gorm:"column:intro"`                             // Intro 为节点介绍.
+	Type          string  `gorm:"column:type"`                              // Type 为 folder 或 file.
+	Sort          *uint32 `gorm:"column:sort"`                              // Sort 对应 INT UNSIGNED, nil 表示待排序.
+	DisplayStatus string  `gorm:"column:display_status"`                    // DisplayStatus 为节点自身的显隐状态.
+}
+
+// ReadBookTree 在同一个只读快照内取书籍摘要和该书全部目录行.
+func (c *Catalogue) ReadBookTree(ctx context.Context, bookID int64) (*Book, []Catalogue, error) {
+	if c == nil {
+		return nil, nil, errors.New("model.Catalogue.ReadBookTree: nil receiver")
+	}
+	if ctx == nil {
+		return nil, nil, errors.New("model.Catalogue.ReadBookTree: nil context")
+	}
+	if bookID &lt;= 0 {
+		return nil, nil, errors.New("model.Catalogue.ReadBookTree: book ID must be positive")
+	}
+	if db.DB == nil {
+		return nil, nil, errors.New("model.Catalogue.ReadBookTree: database is not initialized")
+	}
+
+	tx := db.DB.WithContext(ctx).Begin(&amp;sql.TxOptions{
+		Isolation: sql.LevelRepeatableRead,
+		ReadOnly:  true,
+	})
+	if tx.Error != nil {
+		return nil, nil, tx.Error
+	}
+	defer tx.Rollback()
+
+	var book Book
+	err := tx.Select("id", "title", "sort", "display_status").
+		Where("id = ?", bookID).Take(&amp;book).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, BookNotFoundErr
+		}
+		return nil, nil, err
+	}
+
+	var rows []Catalogue
+	err = tx.Model(&amp;Catalogue{}).
+		Select("id", "book_id", "parent_id", "name", "intro", "type", "sort", "display_status").
+		Where("book_id = ?", bookID).Find(&amp;rows).Error
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := tx.Commit().Error; err != nil {
+		return nil, nil, err
+	}
+	return &amp;book, rows, nil
+}</code></pre></details>
+<p>第一条 <code>Take</code> 未命中时返回 <code>model.BookNotFoundErr</code>。第二条 <code>Find</code> 未命中时得到空集合。循环查询每个目录的子项会使 SQL 次数随节点数增加；此实现读取已存在书籍的 SQL 查询次数固定为两次。</p></section>
+<section id="assembly"><h2>从平面记录组装并排列每一层</h2>
+<h3 id="biz-tree-entry">业务入口</h3><p>将 <code>Tree()</code> 放在现有 <a href="../biz/catalogue.go">biz/catalogue.go</a> 中，与接收者类型 <code>Catalogue</code> 一起维护。在 <code>package biz</code> 下加入以下导入，再把方法追加到结构体定义之后。</p>
+<details><summary><small>补充导入</small>biz/catalogue.go</summary>
+<pre><code id="biz-imports" data-path="biz/catalogue.go" data-mode="import-block">import (
+	"context"
+	"errors"
+
+	"SolarNotesAdminAPI/model"
+	reqCatalogue "SolarNotesAdminAPI/param/req/v1/catalogue"
+	"SolarNotesAdminAPI/sys_error"
+)</code></pre></details>
+<p>四个空值判断分别标明接收者、上下文、请求和书籍引用。读库失败由 <code>DatabaseError</code> 包装；有书且数据关系不满足树契约时，建议返回 <code>InternalError</code>。前端收到完整树或明确错误，避免在缺失部分节点的目录上编排。</p>
+<details open><summary><small>追加接收者方法</small>biz/catalogue.go</summary>
+<pre><code id="biz-entry" data-path="biz/catalogue.go" data-mode="append">// Tree 根据请求读取一本书的当前状态并组装完整的管理目录.
+func (c *Catalogue) Tree(ctx context.Context, req *reqCatalogue.TreeReq) (*Book, []*Catalogue, error) {
+	if c == nil {
+		return nil, nil, &amp;sys_error.InternalError{Cause: errors.New("biz.Catalogue.Tree: nil receiver")}
+	}
+	if ctx == nil {
+		return nil, nil, &amp;sys_error.InternalError{Cause: errors.New("biz.Catalogue.Tree: nil request context")}
+	}
+	if req == nil {
+		return nil, nil, &amp;sys_error.InternalError{Cause: errors.New("biz.Catalogue.Tree: nil tree request")}
+	}
+	if req.Book == nil {
+		return nil, nil, &amp;sys_error.InternalError{Cause: errors.New("biz.Catalogue.Tree: nil book reference")}
+	}
+
+	orm := &amp;model.Catalogue{}
+	book, rows, err := orm.ReadBookTree(ctx, req.Book.ID)
+	if err != nil {
+		if errors.Is(err, model.BookNotFoundErr) {
+			return nil, nil, sys_error.BookNotFoundErr
+		}
+		return nil, nil, &amp;sys_error.DatabaseError{Cause: err}
+	}
+	roots, err := buildCatalogueTree(book.ID, rows)
+	if err != nil {
+		return nil, nil, &amp;sys_error.InternalError{Cause: err}
+	}
+	summary := &amp;Book{
+		ID:            book.ID,
+		Title:         book.Title,
+		Sort:          book.Sort,
+		DisplayStatus: book.DisplayStatus,
+	}
+	return summary, roots, nil
+}</code></pre></details>
+<h3>两遍挂接，再核对可达节点数</h3><p>第一遍按 ID 建立索引并定位根；第二遍根据行中的 <code>ParentID</code> 找到直接父文件夹，把 <code>child.Parent</code> 指向父节点，同时向 <code>parent.Children</code> 追加同一个子节点指针。即使输入中子行早于父行也能正确组装。随后从根遍历，每个非根节点只有一个父项；若遍历数量小于原始行数，说明有与根不连通的环形分支。非空数据要求一个 <code>folder</code> 根。根允许显隐切换，非根的已排项可隐藏，待排项只能隐藏。</p><details><summary><small>新增文件</small>biz/catalogue_node.go</summary>
+<pre><code id="biz-node" data-path="biz/catalogue_node.go" data-mode="new">package biz
+
+import (
+	"fmt"
+
+	"SolarNotesAdminAPI/enum"
+	"SolarNotesAdminAPI/model"
+
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
+)
+
+// buildCatalogueTree 将单本书的平面记录挂接为双向树, 空书返回空数组.
+func buildCatalogueTree(bookID int64, rows []model.Catalogue) ([]*Catalogue, error) {
+	if len(rows) == 0 {
+		return []*Catalogue{}, nil
+	}
+
+	byID := make(map[int64]*Catalogue, len(rows))
+	var root *Catalogue
+	for i := range rows {
+		row := &amp;rows[i]
+		if row.BookID != bookID {
+			return nil, fmt.Errorf("node %d belongs to book %d, expected %d", row.ID, row.BookID, bookID)
+		}
+		if _, exists := byID[row.ID]; exists {
+			return nil, fmt.Errorf("duplicate catalogue ID %d", row.ID)
+		}
+		if err := validateCatalogueRow(row); err != nil {
+			return nil, err
+		}
+
+		node := &amp;Catalogue{
+			ID:            row.ID,
+			Type:          row.Type,
+			Name:          row.Name,
+			Intro:         row.Intro,
+			Sort:          row.Sort,
+			DisplayStatus: row.DisplayStatus,
+			Children:      []*Catalogue{},
+		}
+		if row.ParentID == 0 {
+			if root != nil {
+				return nil, fmt.Errorf("multiple roots in book %d", bookID)
+			}
+			root = node
+		}
+		byID[node.ID] = node
+	}
+	if root == nil {
+		return nil, fmt.Errorf("root missing in nonempty book %d", bookID)
+	}
+
+	// 按模型行的 ParentID 挂接两端, 根节点的 Parent 保持 nil.
+	for _, row := range rows {
+		if row.ParentID == 0 {
+			continue
+		}
+		parent := byID[row.ParentID]
+		if parent == nil || parent.Type != enum.TypeFolder {
+			return nil, fmt.Errorf("node %d has missing or non-folder parent %d", row.ID, row.ParentID)
+		}
+		node := byID[row.ID]
+		node.Parent = parent
+		parent.Children = append(parent.Children, node)
+	}
+
+	// 只沿 Children 从根向下遍历. 每个非根节点恰有一个父节点, 不可达分支必然含环.
+	order := catalogueOrder{names: collate.New(language.Make("zh-CN"), collate.Numeric)}
+	queue := []*Catalogue{root}
+	for i := 0; i &lt; len(queue); i++ {
+		node := queue[i]
+		if err := order.sortChildren(node); err != nil {
+			return nil, err
+		}
+		queue = append(queue, node.Children...)
+	}
+	if len(queue) != len(rows) {
+		return nil, fmt.Errorf("cycle outside the root of book %d", bookID)
+	}
+	return []*Catalogue{root}, nil
+}
+
+// validateCatalogueRow 在挂接父节点前, 按数据库 ParentID 区分根和普通节点并校验字段.
+func validateCatalogueRow(row *model.Catalogue) error {
+	if row.ID &lt;= 0 || row.ParentID &lt; 0 {
+		return fmt.Errorf("invalid catalogue identity: id=%d parent_id=%d", row.ID, row.ParentID)
+	}
+	if row.Type != enum.TypeFolder &amp;&amp; row.Type != enum.TypeFile {
+		return fmt.Errorf("node %d has unknown type %q", row.ID, row.Type)
+	}
+	if row.DisplayStatus != enum.DisplayVisible &amp;&amp; row.DisplayStatus != enum.DisplayHidden {
+		return fmt.Errorf("node %d has unknown display status %q", row.ID, row.DisplayStatus)
+	}
+	if row.ParentID == 0 {
+		if row.Type != enum.TypeFolder || row.Sort == nil || *row.Sort != 0 {
+			return fmt.Errorf("root %d must be a folder with sort 0", row.ID)
+		}
+		return nil
+	}
+	if row.Sort == nil &amp;&amp; row.DisplayStatus != enum.DisplayHidden {
+		return fmt.Errorf("unsorted node %d must be hidden", row.ID)
+	}
+	if row.Sort != nil &amp;&amp; *row.Sort == 0 {
+		return fmt.Errorf("non-root node %d has invalid sort %d", row.ID, *row.Sort)
+	}
+	return nil
+}</code></pre></details>
+<h3>每个文件夹独立排序</h3><p>已排项全部在前，按 <code>sort</code> 数值升序；待排项随后，按中文名称自然顺序排列，名称比较相等时按数值 ID 升序。比如同层的已排「结语」仍排在待排「第2章」「第10章」前。不同父目录可以各自拥有 <code>sort = 1</code>。</p><p>原型的名称比较使用 <code>Intl.Collator('zh-CN', { numeric: true })</code>。Go 示例用 <code>golang.org/x/text/collate</code> 的中文规则和 <code>collate.Numeric</code> 实现相同的排序意图。不同排序库版本的少数字符可能有差异，页面直接使用服务端的 <code>children</code> 顺序。工程目前已包含 <code>golang.org/x/text v0.34.0</code>，落地后运行 <code>go mod tidy</code> 可将其归为直接依赖。</p><details><summary><small>新增文件</small>biz/catalogue_order.go</summary>
+<pre><code id="biz-order" data-path="biz/catalogue_order.go" data-mode="new">package biz
+
+import (
+	"cmp"
+	"fmt"
+	"slices"
+
+	"golang.org/x/text/collate"
+)
+
+// catalogueOrder 持有本次组树使用的中文排序器.
+type catalogueOrder struct {
+	names *collate.Collator // names 让名称中的连续数字按数值进行比较.
+}
+
+// sortChildren 排列指定节点的直接子项, 并检查同一父项下是否有重复序号.
+func (o catalogueOrder) sortChildren(parent *Catalogue) error {
+	children := parent.Children
+	slices.SortFunc(children, o.compare)
+	for i := 1; i &lt; len(children); i++ {
+		previous, current := children[i-1].Sort, children[i].Sort
+		if previous != nil &amp;&amp; current != nil &amp;&amp; *previous == *current {
+			return fmt.Errorf("folder %d has duplicate child sort %d", parent.ID, *current)
+		}
+	}
+	return nil
+}
+
+// compare 将已排序项放在前面, 待排序项使用中文自然序, 最后以数值 ID 兜底.
+func (o catalogueOrder) compare(a, b *Catalogue) int {
+	switch {
+	case a.Sort != nil &amp;&amp; b.Sort == nil:
+		return -1
+	case a.Sort == nil &amp;&amp; b.Sort != nil:
+		return 1
+	case a.Sort != nil &amp;&amp; b.Sort != nil:
+		if order := cmp.Compare(*a.Sort, *b.Sort); order != 0 {
+			return order
+		}
+	default:
+		if order := o.names.CompareString(a.Name, b.Name); order != 0 {
+			return order
+		}
+	}
+	return cmp.Compare(a.ID, b.ID)
+}</code></pre></details>
+<p>设全书有 <code>n</code> 个节点，索引、挂接和可达性检查均为 <code>O(n)</code>；同级分别排序，最坏比较次数为 <code>O(n log n)</code>。业务层的索引、节点与遍历队列合计使用 <code>O(n)</code> 空间。</p></section>
+<section id="controller"><h2>映射业务码并注册鉴权路由</h2>
+<p>在现有书籍业务错误和响应包装器中各追加一段。<code>20202</code> 表示书籍引用失效。数据库读失败复用 <code>10201</code>，目录结构异常复用 <code>500</code>；错误详情保留在服务端错误链，响应中的 <code>data</code> 为 <code>{}</code>。</p><details><summary><small>追加到现有文件</small>sys_error/book_error.go</summary>
+<pre><code id="sys-error" data-path="sys_error/book_error.go" data-mode="append">// BookNotFoundErr 表示管理员选中的书籍已不存在.
+var BookNotFoundErr = errors.New("所选书籍不存在,请刷新书籍选项")</code></pre></details>
+<details><summary><small>追加到现有文件</small>resp_body/resp_body.go</summary>
+<pre><code id="resp-error" data-path="resp_body/resp_body.go" data-mode="append">// BookNotFoundCode 表示书籍已不存在, 前端可重新获取书籍选项.
+const BookNotFoundCode = 20202
+
+// BookNotFoundError 将书籍不存在映射为统一业务响应.
+func (r *RespBody) BookNotFoundError() {
+	r.failure(BookNotFoundCode, sys_error.BookNotFoundErr.Error())
+}</code></pre></details>
+<p>控制器按项目约定返回 HTTP 200，以响应体内的 <code>code</code> 表示结果。绑定时使用同一解码器读取一个对象并检查 EOF，再调用 Gin 已注册的校验器。合法尾随空白可以通过，拼接两个 JSON 值会得到 <code>10101</code>。这一处理复用已生效的全局请求体大小限制。</p><p>控制器将两个成功返回值组装到同一个 <code>data.book</code> 对象。转换时只沿 <code>Children</code> 向下递归；访问 <code>Parent</code> 时仅读取其 ID。这样既能生成 <code>parent_id</code>，也能避免沿双向引用重复遍历。</p><details><summary><small>新增文件</small>controller/v1/catalogue/catalogue.go</summary>
+<pre><code id="controller-tree" data-path="controller/v1/catalogue/catalogue.go" data-mode="new">package catalogue
+
+import (
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"strconv"
+
+	"SolarNotesAdminAPI/biz"
+	reqCatalogue "SolarNotesAdminAPI/param/req/v1/catalogue"
+	respCatalogue "SolarNotesAdminAPI/param/resp/v1/catalogue"
+	"SolarNotesAdminAPI/resp_body"
+	"SolarNotesAdminAPI/sys_error"
+
+	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+)
+
+// Tree 返回选中书籍的摘要和完整目录.
+func Tree(c *gin.Context) {
+	req := &amp;reqCatalogue.TreeReq{}
+	body := &amp;resp_body.RespBody{}
+	if err := bindTreeRequest(c, req); err != nil {
+		body.ValidateError(err)
+		c.JSON(http.StatusOK, body)
+		return
+	}
+
+	service := &amp;biz.Catalogue{}
+	book, roots, err := service.Tree(c.Request.Context(), req)
+	if err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, sys_error.BookNotFoundErr):
+			body.BookNotFoundError()
+		case errors.As(err, &amp;dbErr):
+			body.DBError(dbErr)
+		default:
+			body.InternalError(err)
+		}
+		c.JSON(http.StatusOK, body)
+		return
+	}
+
+	bookResp := &amp;respCatalogue.TreeBookResp{
+		ID:            strconv.FormatInt(book.ID, 10),
+		Title:         book.Title,
+		Sort:          book.Sort,
+		DisplayStatus: book.DisplayStatus,
+		Catalogues:    treeNodeResponses(roots),
+	}
+	body.Success(map[string]any{"book": bookResp})
+	c.JSON(http.StatusOK, body)
+}
+
+// bindTreeRequest 只接受一个完整 JSON 值, 然后执行 Gin 的字段校验.
+func bindTreeRequest(c *gin.Context, req *reqCatalogue.TreeReq) error {
+	decoder := json.NewDecoder(c.Request.Body)
+	if err := decoder.Decode(req); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&amp;struct{}{}); err != io.EOF {
+		return errors.New("request body must contain one JSON object")
+	}
+	return binding.Validator.ValidateStruct(req)
+}
+
+// treeNodeResponses 保留业务层的顺序, 并把每层 ID 转为字符串.
+func treeNodeResponses(nodes []*biz.Catalogue) []*respCatalogue.TreeNodeResp {
+	result := make([]*respCatalogue.TreeNodeResp, 0, len(nodes))
+	for _, node := range nodes {
+		parentID := "0"
+		if node.Parent != nil {
+			parentID = strconv.FormatInt(node.Parent.ID, 10)
+		}
+		result = append(result, &amp;respCatalogue.TreeNodeResp{
+			ID:            strconv.FormatInt(node.ID, 10),
+			ParentID:      parentID,
+			Name:          node.Name,
+			Type:          node.Type,
+			Sort:          node.Sort,
+			DisplayStatus: node.DisplayStatus,
+			Children:      treeNodeResponses(node.Children),
+		})
+	}
+	return result
+}</code></pre></details>
+<p>在 <code>main.go</code> 的 import 块加入目录控制器，在 <code>newRouter</code> 中紧接 <code>v1.POST("/book/options", book.Options)</code> 注册下列路由。当前全局 <code>adminAuth.Handle</code> 会验证管理员 Bearer 令牌。</p><details><summary><small>加入 import 块</small>main.go</summary>
+<pre><code id="main-import" data-path="main.go" data-mode="import">"SolarNotesAdminAPI/controller/v1/catalogue"</code></pre></details>
+<details><summary><small>追加到 v1 路由组</small>main.go</summary>
+<pre><code id="main-route" data-path="main.go" data-mode="route">v1.POST("/catalogue/tree", catalogue.Tree)</code></pre></details>
+</section>
+<section id="verify"><h2>Postman 与业务层验收</h2>
+<p>Postman 使用 <code>POST {{base_url}}/v1/catalogue/tree</code>，选择 Bearer Token 和 raw / JSON。先用天体与书籍选项接口找到可用 ID。真实样本适合验证全量与空文件夹；排序混合、坏数据和删除等分支可用独立测试数据或组树函数的内存输入验证。</p><div class="table-wrap"><table><thead><tr><th scope="col">输入或条件</th><th scope="col">预期结果</th></tr></thead><tbody>
+<tr><td>实际示例书籍 ID</td><td>返回 <code>200</code>。若数据仍与上方快照一致，所有 <code>children</code> 递归合计加根为 59；根为 <code>"2123684178040987648"</code>，空文件夹仍是 <code>folder</code>。</td></tr>
+<tr><td>同一批测试数据包含两本书，其中目标书隐藏</td><td>仅出现目标书的目录；书籍、根和子节点各自的 <code>display_status</code> 原样保留。独立切换书籍状态不会覆盖节点状态。</td></tr>
+<tr><td>在隔离环境准备同层子项，排序值分别为 <code>1</code>、<code>2147483648</code>、<code>4294967295</code> 和 <code>NULL</code></td><td><code>200</code>；三个正数按数值升序作为 JSON 数字返回，最后一项输出 <code>"sort": null</code>。根的排序仍为数字 <code>0</code>。</td></tr>
+<tr><td>同层含已排序项、待排「第2章」和「第10章」以及两个同名项</td><td>先按序号，再按中文名称自然序，最后按数值 ID。请求多次或打乱输入，响应顺序相同。不同父目录互不影响。</td></tr>
+<tr><td>两本书都存在，其中一本未导入目录，另一本只有根</td><td>两者均返回各自的书籍摘要。前者 <code>catalogues: []</code>，后者有一个根且 <code>children: []</code>。</td></tr>
+<tr><td>格式合法但书籍不存在</td><td>HTTP 200 / <code>20202</code>，<code>data: {}</code>。</td></tr>
+<tr><td>缺少 book、空值、数字型 ID、<code>"0"</code>、越界字符串或两个 JSON 对象</td><td><code>10101</code>。合法请求后附空白仍成功。</td></tr>
+<tr><td>缺少令牌或令牌无效 / 签名有效但已过期</td><td>分别为 <code>20004</code> / <code>20003</code>。</td></tr>
+<tr><td>同书中出现多个根、环、孤儿、文件被用作父节点，或可见的待排节点</td><td>按本方案返回 <code>500</code> 及空对象，向内部错误链写入具体节点或书籍 ID。</td></tr>
+<tr><td>读表或提交事务失败</td><td><code>10201</code>。不会返回半棵树。</td></tr>
+</tbody></table></div>
+<p>单测 <code>buildCatalogueTree</code> 时，除了乱序输入、排序和空数组，还可断言 <code>root.Parent == nil</code>、<code>child.Parent == root</code>，并核对 <code>child.Intro</code>。再运行 <code>go test ./...</code> 并联调 HTTP 响应。</p></section>
+</main></div>
+<script>
+  const controls = document.querySelector('.tools');
+  controls.hidden = false;
+  controls.addEventListener('click', (event) => {
+    const choice = event.target.dataset.open;
+    if (choice === undefined) return;
+    for (const panel of document.querySelectorAll('main details')) panel.open = choice === 'true';
+  });
+  for (const block of document.querySelectorAll('details pre code')) {
+    const toolbar = document.createElement('div');
+    toolbar.className = 'copy';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = '复制代码';
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(block.textContent);
+        button.textContent = '已复制';
+      } catch {
+        const range = document.createRange();
+        range.selectNodeContents(block);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        button.textContent = '已选中，请手动复制';
+      }
+    });
+    toolbar.append(button);
+    block.closest('details').append(toolbar);
+  }
+</script>
+</body></html>

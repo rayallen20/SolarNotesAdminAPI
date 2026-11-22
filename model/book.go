@@ -16,6 +16,9 @@ import (
 // BookSortOccupiedErr 本错误表示同一天体下的书籍排序值已被其他记录占用
 var BookSortOccupiedErr = errors.New("book sort is occupied")
 
+// BookNotFoundErr 本错误表示表示给定的书籍不存在
+var BookNotFoundErr = errors.New("book not found")
+
 // Book 本结构体用于映射 book 表,只包含本次创建书籍所需的字段.
 type Book struct {
 	ID            int64   `gorm:"column:id;primaryKey;autoIncrement:false"` // ID 书籍ID

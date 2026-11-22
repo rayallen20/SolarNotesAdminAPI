@@ -11,7 +11,7 @@ import (
 	"SolarNotesAdminAPI/sys_error"
 )
 
-// Book 承载书籍创建业务.
+// Book 本结构体用于表示书籍业务实体
 type Book struct {
 	ID            int64   `json:"id"`             // ID 书籍ID
 	Title         string  `json:"title"`          // Title 书籍标题

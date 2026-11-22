@@ -29,7 +29,7 @@ const (
 
 	BookPlanetNotFoundCode = 20102 // BookPlanetNotFoundCode 天体引用失效状态码
 	BookSortOccupiedCode   = 20201 // BookSortOccupiedCode 给定天体下的书籍排序冲突状态码
-
+	BookNotFoundCode       = 20202 // BookNotFoundCode 表示书籍已不存在, 前端可重新获取书籍选项
 )
 
 type RespBody struct {
@@ -116,4 +116,9 @@ func (r *RespBody) BookPlanetNotFoundError() {
 // BookSortOccupiedError 本方法用于生成给定天体下书籍排序冲突时的响应体
 func (r *RespBody) BookSortOccupiedError() {
 	r.failure(BookSortOccupiedCode, sys_error.BookSortOccupiedErr.Error())
+}
+
+// BookNotFoundError 将书籍不存在映射为统一业务响应.
+func (r *RespBody) BookNotFoundError() {
+	r.failure(BookNotFoundCode, sys_error.BookNotFoundErr.Error())
 }
