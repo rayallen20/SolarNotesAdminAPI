@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Solar Notes 管理端文章预览接口的 Go 实现，涵盖目录节点查询、Markdown 文件读取和 Nginx 图片地址转换。">
+<title>点击文件，预览 Markdown · Solar Notes 管理 API</title><style>
+    :root {
+      color-scheme: light;
+      --ink: #192f29; --muted: #53665e; --green: #205e49; --line: #cddbd2;
+      --paper: #f7f9f6; --soft: #e7f1e9; --code: #142f29;
+      --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font: 16px/1.8 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    a { color: var(--green); text-underline-offset: .2em; }
+    :focus-visible { outline: 3px solid #247dab; outline-offset: 3px; }
+    .page { max-width: 78rem; margin: auto; padding: 3rem 2.5rem 5rem; display: grid; grid-template-columns: 12rem minmax(0,1fr); gap: 3.75rem; }
+    aside { align-self: start; position: sticky; top: 2rem; }
+    .project { font-weight: 750; letter-spacing: .03em; }
+    nav { display: grid; margin-top: 1rem; border-left: 2px solid var(--line); }
+    nav a { padding: .28rem .85rem; text-decoration: none; }
+    nav a:hover { background: var(--soft); text-decoration: underline; }
+    main { min-width: 0; }
+    header { border-bottom: 1px solid var(--line); padding-bottom: 1.1rem; }
+    .endpoint { color: var(--green); font: 650 .95rem/1.6 var(--mono); }
+    h1 { font-size: clamp(2rem, 4.2vw, 3.15rem); line-height: 1.18; margin: .55rem 0 1rem; }
+    header p { color: var(--muted); }
+    section { margin-top: 2.6rem; scroll-margin-top: 1rem; }
+    h2 { font-size: 1.55rem; line-height: 1.4; margin: 0 0 .65rem; }
+    p { margin: .7rem 0; }
+    :not(pre) > code { font: .9em/1.6 var(--mono); background: var(--soft); padding: .1em .28em; border-radius: .25rem; overflow-wrap: anywhere; }
+    details { margin: 1rem 0; background: white; border: 1px solid var(--line); border-radius: .6rem; overflow: hidden; }
+    summary { padding: .65rem .95rem; cursor: pointer; font-weight: 650; overflow-wrap: anywhere; }
+    summary small { font-weight: 500; color: var(--muted); margin-right: .65rem; }
+    pre { margin: 0; padding: 1.05rem 1.2rem; background: var(--code); color: #f0f7ed; overflow-x: auto; tab-size: 4; }
+    pre code { font: .87rem/1.65 var(--mono); }
+    .copy { display: flex; justify-content: flex-end; padding: .3rem .75rem; border-top: 1px solid var(--line); }
+    .copy button { color: var(--green); background: white; border: 1px solid var(--line); border-radius: .3rem; padding: .22rem .55rem; font: inherit; font-size: .8rem; cursor: pointer; }
+    .note { border-left: 3px solid var(--green); background: var(--soft); padding: .6rem .9rem; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: .5rem; }
+    table { border-collapse: collapse; width: 100%; font-size: .95rem; background: white; }
+    th, td { padding: .65rem .8rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    thead { background: var(--soft); } tbody tr:last-child td { border-bottom: 0; }
+    @media (max-width: 52rem) {
+      .page { display: block; padding: 1rem 1rem 3rem; } aside { position: static; margin-bottom: 1.6rem; }
+      nav { display: flex; flex-wrap: wrap; gap: .15rem .85rem; border: 0; margin-top: .25rem; }
+      nav a { padding: .15rem 0; font-size: .88rem; } th, td { padding: .45rem; }
+    }
+    @media print {
+      .page { display: block; padding: 0; } aside, .copy { display: none; }
+      pre { white-space: pre-wrap; overflow-wrap: anywhere; color: black; background: white; }
+    }
+  
+    .flow { margin: 1.3rem 0; padding: .65rem 1rem; background: var(--soft); border-radius: .45rem; }
+    .flow p { margin: .2rem 0; }
+    h3 { margin: 1.4rem 0 .4rem; font-size: 1.1rem; }
+    .tools button { cursor: pointer; font: inherit; font-size: .9rem; padding: .25rem .75rem; margin-right: .4rem; border: 1px solid var(--line); background: white; color: var(--green); border-radius: .35rem; }
+    .tools { margin-top: .9rem; }
+    .table-wrap td:first-child { min-width: 6rem; }
+    @media print { .tools { display: none; } }
+
+.route-map { margin: 1rem 0; border: 1px solid var(--line); border-radius: .5rem; background: #fff; }
+.route-map > div { display: grid; grid-template-columns: 8.1rem minmax(0,1fr); gap: .65rem; align-items: baseline; padding: .48rem .85rem; }
+.route-map > div + div { border-top: 1px solid var(--line); }
+.route-map span { color: var(--muted); font-size: .91rem; }
+.route-map code { background: none; padding: 0; }
+.route-map > div:last-child { background: var(--soft); }
+@media (max-width:40rem) { .route-map > div { display: block; } .route-map span { display: block; } }
+</style></head><body><div class="page"><aside><div class="project">Solar Notes · 管理 API</div>
+<nav aria-label="本文目录"><a href="#contract">请求与响应</a><a href="#storage">磁盘路径与公开 URL</a><a href="#dto">请求、响应与业务码</a><a href="#model">按节点查文章</a><a href="#biz">业务入口</a><a href="#filesystem">读取 Markdown 与定位图片</a><a href="#markdown">改写正文中的图片</a><a href="#http">控制器与路由</a><a href="#verify">联调与验收</a></nav></aside>
+<main><header><div class="endpoint">POST /v1/article/preview</div><h1>点击文件，预览 Markdown</h1>
+<p>管理员从目录树或右侧文件列表点开文章。管理 API 读取 Markdown，在返回的正文里改写本地图片地址。浏览器渲染正文，并向资源服务器加载图片。</p>
+<p><a href="../../SolarNotesAdmin/doc/catalogue-api-design.html#preview">目录管理接口设计 · 第 ⑥ 项</a> · <a href="catalogue-tree-api-implementation.html#contract">目录树返回的文件节点</a></p><div class="tools" hidden><button type="button" data-open="true">展开全部示例</button><button type="button" data-open="false">收起全部示例</button></div></header>
+
+<section id="contract"><h2>一次点击如何得到预览</h2>
+<p>前端从 <code>type === "file"</code> 的节点取 <code>id</code>，以十进制字符串放入请求。发送 <code>Content-Type: application/json</code> 和 <code>Authorization: Bearer &lt;access_token&gt;</code>。目录名、文件路径和资源域名都由服务端确定。</p>
+<details open><summary><small>请求 JSON</small>从目录树取得的文件节点 ID</summary>
+<pre><code id="sample-request">{
+  "catalogue": {
+    "id": "2123684178049376261"
+  }
+}</code></pre></details>
+<details open><summary><small>HTTP 200</small>文章 ID、预览标题与正文</summary>
+<pre><code id="sample-response">{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "article": {
+      "id": "2123684178049376262",
+      "title": "0. 大致过程.md",
+      "content": "# 服务器处理客户端请求\n\n![查询请求执行过程](http://192.168.1.60:8080/testUpload/%E7%AC%AC1%E7%AB%A0%20%E8%A3%85%E4%BD%9C%E8%87%AA%E5%B7%B1%E6%98%AF%E4%B8%AA%E5%B0%8F%E7%99%BD--%E5%88%9D%E8%AF%86MySQL/6.%20%E6%9C%8D%E5%8A%A1%E5%99%A8%E5%A4%84%E7%90%86%E5%AE%A2%E6%88%B7%E7%AB%AF%E8%AF%B7%E6%B1%82/img/%E6%9F%A5%E8%AF%A2%E8%AF%B7%E6%B1%82%E6%89%A7%E8%A1%8C%E8%BF%87%E7%A8%8B.jpg)\n"
+    }
+  }
+}</code></pre></details>
+<p>请求中的 <code>catalogue.id</code> 标识点击的文件节点。响应中的 <code>data.article.id</code> 取关联文章的主键 <code>article.id</code>，按十进制字符串返回，以便浏览器精确读取雪花 ID。上例的文章 ID 为示例值。</p>
+<p><code>data.article.title</code> 取目录节点当前的 <code>catalogue.name</code>，保留其原值。<code>content</code> 是 UTF-8 Markdown 字符串，示例里的 <code>\n</code> 是 JSON 对换行的表示。管理员可以预览隐藏书籍、隐藏节点以及尚未排序的文章。</p>
+</section>
+<section id="storage"><h2>把磁盘上的图片映射到浏览器地址</h2>
+<p>在 <code>192.168.1.60</code> 上，<code>/etc/nginx/sites-enabled/solar-assets.conf</code> 已链接到 <code>sites-available/solar-assets.conf</code>。Nginx 监听 <code>8080</code>，站点的 <code>root</code> 是 <code>/solar-notes-data</code>。它拒绝隐藏路径和以 <code>.md</code> 结尾的 URI，普通文件由 <code>try_files $uri =404</code> 提供。</p>
+<details open><summary><small>已有配置节选</small>config.dev.yaml 和 config.prod.yaml</summary>
+<pre><code id="sample-config">asset:
+  base_url: "http://192.168.1.60:8080"
+
+storage:
+  root_dir: "/solar-notes-data"</code></pre></details>
+<div class="route-map" aria-label="图片路径转换示例"><div><span>文章在磁盘上</span><code>/solar-notes-data/mysql/ch01/intro.md</code></div><div><span>正文中的目标</span><code>./img/query plan.jpg</code></div><div><span>相对存储根</span><code>mysql/ch01/img/query plan.jpg</code></div><div><span>浏览器请求</span><code>http://192.168.1.60:8080/mysql/ch01/img/query%20plan.jpg</code></div></div>
+<p>相对图片以文章所在目录为起点。去掉磁盘根目录后，逐个编码 URL 路径段，保留目录分隔符。<code>asset.base_url</code> 只从配置读取，一次改配置就能切换资源主机。源码始终只读，每次响应独立生成。</p>
+<p class="note"><strong>开发机联调。</strong> 当前 Mac 上没有 <code>/solar-notes-data</code>。可以在能读取该目录的服务器上运行 API，或让本地 API 进程通过只读挂载访问同一棵文件树。已有记录包含 <code>/solar-notes-data/...</code> 绝对路径时，使用相同挂载点即可直接验证。若要改用不同挂载点，应先把历史记录迁成根相对路径或另行明确映射。浏览器能打开图片，只验证了 Nginx 这一段。</p>
+</section>
+<section id="dto"><h2>请求、响应与业务码</h2>
+<p>请求 DTO 接收完整的 <code>catalogue</code> 对象。必填指针和 <code>gt=0</code> 校验能区分缺失对象、无效 ID 和合法文件引用。响应 DTO 包含文章 ID、预览标题和正文，由控制器装入项目的 <code>map[string]any</code>。</p>
+<details><summary><small>新增完整文件</small>param/req/v1/article/preview.go</summary>
+<pre><code id="sample-req" data-path="param/req/v1/article/preview.go">package article
+
+// PreviewReq 指定管理员在目录中点击的文件节点.
+type PreviewReq struct {
+	Catalogue *PreviewCatalogueReq `json:"catalogue" binding:"required"` // Catalogue 为必填节点引用.
+}
+
+// PreviewCatalogueReq 接收十进制字符串形式的雪花 ID.
+type PreviewCatalogueReq struct {
+	ID int64 `json:"id,string" binding:"gt=0"` // ID 来自目录树中的文件节点.
+}</code></pre></details><details><summary><small>新增完整文件</small>param/resp/v1/article/preview.go</summary>
+<pre><code id="sample-resp" data-path="param/resp/v1/article/preview.go">package article
+
+// PreviewResp 是 data.article 的内容.
+type PreviewResp struct {
+	ID      string `json:"id"`      // ID 是文章主键的十进制字符串.
+	Title   string `json:"title"`   // Title 是目录树中显示的文件名.
+	Content string `json:"content"` // Content 是已改写图片地址的 UTF-8 Markdown.
+}</code></pre></details>
+<div class="table-wrap"><table><thead><tr><th scope="col">业务码</th><th scope="col">本接口中的含义</th></tr></thead><tbody>
+<tr><td><code>200</code></td><td>读取并转换成功。空的 UTF-8 文件也可返回空字符串。</td></tr>
+<tr><td><code>20003 / 20004</code></td><td>令牌过期 / 缺失、无效或已撤销。沿用全局管理员鉴权。</td></tr>
+<tr><td><code>10101</code></td><td>JSON 或字段无效，例如直接发送数值 ID、空引用、零或超出 int64。</td></tr>
+<tr><td><code>20301</code></td><td>目录节点已不存在。复用现有业务码，前端可刷新目录树。</td></tr>
+<tr><td><code>20401</code></td><td>新增。节点是文件夹、缺关联文章、源文件已删除、源文件类型或 UTF-8 编码不符合要求，或本地资源目标越界。前端保留选中位置并提示文章暂时无法预览。</td></tr>
+<tr><td><code>10201 / 500</code></td><td>SQL 执行失败 / 存储根无法打开、权限或其他内部 I/O 故障。对外使用固定消息。</td></tr>
+</tbody></table></div>
+<p>这些是 HTTP 200 响应体内的 <code>code</code>。失败响应中 <code>data</code> 为 <code>{}</code>。统一包装器的常量和方法追加到现有 <code>resp_body/resp_body.go</code>。</p>
+<details><summary><small>新增完整文件</small>sys_error/article_error.go</summary>
+<pre><code id="sample-sentinel" data-path="sys_error/article_error.go">package sys_error
+
+import "errors"
+
+// ArticlePreviewUnavailableErr 表示所选节点当前无法提供 Markdown 预览.
+var ArticlePreviewUnavailableErr = errors.New("文章暂时无法预览")</code></pre></details><details><summary><small>追加到现有文件</small>resp_body/resp_body.go</summary>
+<pre><code id="sample-response-error" data-path="resp_body/resp_body.go">// ArticlePreviewUnavailableCode 表示已存在的节点暂时无法预览.
+const ArticlePreviewUnavailableCode = 20401
+
+// ArticlePreviewUnavailableError 返回稳定的业务码和消息.
+func (r *RespBody) ArticlePreviewUnavailableError() {
+	r.failure(ArticlePreviewUnavailableCode, sys_error.ArticlePreviewUnavailableErr.Error())
+}</code></pre></details>
+</section>
+<section id="model"><h2>按文件节点查询关联文章</h2>
+<p><code>article</code> 表没有标题列。<code>article.catalogue_id</code> 是唯一键，关联 <code>catalogue.id</code>，<code>article.path</code> 指向正文。由 <code>(*model.Article).LoadForPreview</code> 以目录表为起点做一次左连接。如果使用内连接，节点已删除和文章记录缺失都会查不到行，控制器就无法分别返回 <code>20301</code> 与 <code>20401</code>。</p>
+<p>节点类型使用现有 <code>enum.TypeFile</code>。查询只约束节点 ID，管理员预览不受书籍或节点的显隐、排序影响。工程已启用 GORM 的单数表名策略。查询结束即释放数据库连接，再读取磁盘文件。</p>
+<details><summary><small>新增完整文件</small>model/article.go</summary>
+<pre><code id="sample-model" data-path="model/article.go">package model
+
+import (
+	"context"
+	"errors"
+
+	"SolarNotesAdminAPI/db"
+	"SolarNotesAdminAPI/enum"
+
+	"gorm.io/gorm"
+)
+
+// Article 映射 article 表中预览接口使用的列.
+type Article struct {
+	ID          int64  `gorm:"column:id;primaryKey;autoIncrement:false"` // ID 是文章主键.
+	CatalogueID int64  `gorm:"column:catalogue_id"`                      // CatalogueID 是唯一的文件节点引用.
+	Path        string `gorm:"column:path"`                              // Path 是 Markdown 的存储路径.
+}
+
+// ArticlePreviewUnavailableErr 表示节点类型或文章记录不满足预览条件.
+var ArticlePreviewUnavailableErr = errors.New("article preview unavailable")
+
+// LoadForPreview 按节点 ID 加载文章并返回节点名称. 数据库只读一次.
+func (a *Article) LoadForPreview(ctx context.Context, catalogueID int64) (string, error) {
+	if db.DB == nil {
+		return "", errors.New("database is not initialized")
+	}
+
+	// 左连接的文章字段可空, 即使 article 表的对应列定义为 NOT NULL.
+	var row struct {
+		Name      string  // Name 是 catalogue.name.
+		NodeType  string  // NodeType 是 catalogue.type.
+		ArticleID *int64  // ArticleID 为 nil 表示没有关联文章.
+		Path      *string // Path 只用于后端定位源文件.
+	}
+	err := db.DB.WithContext(ctx).Model(&amp;Catalogue{}).
+		Select("catalogue.name, catalogue.type AS node_type, article.id AS article_id, article.path").
+		Joins("LEFT JOIN article ON article.catalogue_id = catalogue.id").
+		Where("catalogue.id = ?", catalogueID).
+		Take(&amp;row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", CatalogueNotFoundErr
+	}
+	if err != nil {
+		return "", err
+	}
+	if row.NodeType != enum.TypeFile || row.ArticleID == nil || row.Path == nil || *row.Path == "" {
+		return "", ArticlePreviewUnavailableErr
+	}
+	*a = Article{ID: *row.ArticleID, CatalogueID: catalogueID, Path: *row.Path}
+	return row.Name, nil
+}</code></pre></details>
+</section>
+<section id="biz"><h2>由 biz.Article 完成一次预览</h2>
+<p><code>biz/article.go</code> 包含 <code>Article</code> 结构体及其全部方法。下面是一份可整体复制的文件，按调用顺序列出业务入口、正文读取和图片地址解析。</p>
+<p><code>(*biz.Article).Preview(ctx, req) error</code> 接收完整请求，使用 <code>conf.Get().Storage.RootDir</code> 和 <code>conf.Get().Asset.BaseURL</code>。控制器为每个请求创建一个 <code>biz.Article</code>。<code>Preview</code> 查到文章后调用 <code>a.readPreviewContent</code>，成功后一起填入模型已查出的 <code>orm.ID</code>、预览标题和正文。</p>
+<p>存储根句柄、公开资源基址和当前正文目录是本次预览的私有状态。<code>readPreviewContent</code> 通过 <code>defer a.closeAssets()</code> 在读取成功或失败后释放句柄并清空这些字段。同一个实例可顺序预览不同文章。不可预览的内容使用现有 <code>sys_error.ArticlePreviewUnavailableErr</code> 返回 <code>20401</code>；其他磁盘错误包装为 <code>sys_error.InternalError</code>。</p>
+<details id="article-source"><summary><small>新增完整文件</small>biz/article.go</summary>
+<pre><code id="sample-biz" data-path="biz/article.go">package biz
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"unicode/utf8"
+
+	"SolarNotesAdminAPI/article_preview"
+	"SolarNotesAdminAPI/conf"
+	"SolarNotesAdminAPI/model"
+	reqArticle "SolarNotesAdminAPI/param/req/v1/article"
+	"SolarNotesAdminAPI/sys_error"
+)
+
+// Article 保存当前请求已成功读取的文章预览.
+type Article struct {
+	ID      int64  // ID 是 article 表的主键.
+	Title   string // Title 使用文件节点当前显示的名称.
+	Content string // Content 保留 Markdown 格式, 供控制器组装响应.
+
+	root       *os.Root // root 限定当前预览读取文件的范围.
+	assetBase  *url.URL // assetBase 是从配置解析出的公开资源基址.
+	articleDir string   // articleDir 是当前正文所在目录相对于存储根的真实路径.
+}
+
+// Preview 从完整请求加载文章, 成功后才更新 ID, Title 和 Content.
+func (a *Article) Preview(ctx context.Context, req *reqArticle.PreviewReq) error {
+	if a == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Article.Preview: nil receiver")}
+	}
+	if ctx == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Article.Preview: nil context")}
+	}
+	if req == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Article.Preview: nil request")}
+	}
+	if req.Catalogue == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Article.Preview: nil catalogue reference")}
+	}
+
+	cfg := conf.Get()
+	if cfg == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("application configuration is not loaded")}
+	}
+	orm := &amp;model.Article{}
+	title, err := orm.LoadForPreview(ctx, req.Catalogue.ID)
+	if err != nil {
+		switch {
+		case errors.Is(err, model.CatalogueNotFoundErr):
+			return sys_error.CatalogueNotFoundErr
+		case errors.Is(err, model.ArticlePreviewUnavailableErr):
+			return sys_error.ArticlePreviewUnavailableErr
+		default:
+			return &amp;sys_error.DatabaseError{Cause: err}
+		}
+	}
+	content, err := a.readPreviewContent(cfg.Storage.RootDir, cfg.Asset.BaseURL, orm.Path)
+	if err != nil {
+		if errors.Is(err, sys_error.ArticlePreviewUnavailableErr) {
+			return sys_error.ArticlePreviewUnavailableErr
+		}
+		return &amp;sys_error.InternalError{Cause: err}
+	}
+	a.ID = orm.ID
+	a.Title = title
+	a.Content = content
+	return nil
+}
+
+// readPreviewContent 读取正文, 并把当前文章的图片地址解析方法交给 Markdown 解析器.
+func (a *Article) readPreviewContent(rootDir, baseURL, storedPath string) (string, error) {
+	err := a.openAssets(rootDir, baseURL)
+	if err != nil {
+		return "", err
+	}
+	defer a.closeAssets()
+
+	source, err := a.readMarkdown(rootDir, storedPath)
+	if err != nil {
+		return "", err
+	}
+	return article_preview.RewriteImages(source, a.imageURL)
+}
+
+// openAssets 在解析文章路径之前打开存储根, 并校验用于拼接的 HTTP(S) 基址.
+func (a *Article) openAssets(rootDir, baseURL string) error {
+	if !filepath.IsAbs(rootDir) {
+		return errors.New("storage.root_dir must be absolute")
+	}
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return err
+	}
+	if (base.Scheme != "http" &amp;&amp; base.Scheme != "https") || base.Host == "" || base.User != nil ||
+		base.RawQuery != "" || base.ForceQuery || base.Fragment != "" {
+		return errors.New("invalid asset.base_url")
+	}
+	realRoot, err := filepath.EvalSymlinks(rootDir)
+	if err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(realRoot)
+	if err != nil {
+		return err
+	}
+	a.root = root
+	a.assetBase = base
+	return nil
+}
+
+// closeAssets 释放存储根并清理本次预览使用的路径信息.
+func (a *Article) closeAssets() {
+	_ = a.root.Close()
+	a.root = nil
+	a.assetBase = nil
+	a.articleDir = ""
+}
+
+// readMarkdown 读取 UTF-8 正文, 成功时记下文章所在目录相对于存储根的真实路径.
+func (a *Article) readMarkdown(rootDir, storedPath string) ([]byte, error) {
+	name := storedPath
+	if filepath.IsAbs(name) {
+		relative, err := filepath.Rel(rootDir, name)
+		if err != nil {
+			return nil, sys_error.ArticlePreviewUnavailableErr
+		}
+		name = relative
+	}
+	if !strings.EqualFold(filepath.Ext(name), ".md") {
+		return nil, sys_error.ArticlePreviewUnavailableErr
+	}
+	actual, err := a.resolveStoragePath(name, false)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(filepath.Ext(actual), ".md") {
+		return nil, sys_error.ArticlePreviewUnavailableErr
+	}
+	// Linux 和 macOS 上用 O_NONBLOCK 打开, 避免在 Stat 识别 FIFO 之前阻塞.
+	f, err := a.root.OpenFile(actual, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, sys_error.ArticlePreviewUnavailableErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, sys_error.ArticlePreviewUnavailableErr
+	}
+	content, err := io.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+	if !utf8.Valid(content) {
+		return nil, sys_error.ArticlePreviewUnavailableErr
+	}
+	a.articleDir = filepath.Dir(actual)
+	return content, nil
+}
+
+// resolveStoragePath 解析符号链接并检查根边界. 普通缺图可以保留尚不存在的尾部路径.
+func (a *Article) resolveStoragePath(name string, allowMissing bool) (string, error) {
+	if !filepath.IsLocal(name) || strings.ContainsRune(name, 0) {
+		return "", sys_error.ArticlePreviewUnavailableErr
+	}
+	rootDir := a.root.Name()
+	candidate := filepath.Join(rootDir, name)
+	var missing []string
+	for {
+		resolved, err := filepath.EvalSymlinks(candidate)
+		if err == nil {
+			relative, relErr := filepath.Rel(rootDir, resolved)
+			if relErr != nil || !filepath.IsLocal(relative) {
+				return "", sys_error.ArticlePreviewUnavailableErr
+			}
+			for i := len(missing) - 1; i &gt;= 0; i-- {
+				relative = filepath.Join(relative, missing[i])
+			}
+			return relative, nil
+		}
+		if errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.ELOOP) {
+			return "", sys_error.ArticlePreviewUnavailableErr
+		}
+		if !errors.Is(err, fs.ErrNotExist) || candidate == rootDir {
+			return "", err
+		}
+		if !allowMissing {
+			return "", sys_error.ArticlePreviewUnavailableErr
+		}
+		// 失效的符号链接本身仍有目录项, 普通缺失路径则没有.
+		_, statErr := os.Lstat(candidate)
+		if statErr == nil {
+			return "", sys_error.ArticlePreviewUnavailableErr
+		}
+		if !errors.Is(statErr, fs.ErrNotExist) {
+			return "", statErr
+		}
+		missing = append(missing, filepath.Base(candidate))
+		candidate = filepath.Dir(candidate)
+	}
+}
+
+// imageURL 将文章引用的本地图片映射到该文件的公开 URL.
+func (a *Article) imageURL(destination string) (string, error) {
+	u, err := url.Parse(destination)
+	if err != nil {
+		return "", fmt.Errorf("%w: invalid image URI", sys_error.ArticlePreviewUnavailableErr)
+	}
+	if u.Host != "" &amp;&amp; (u.Scheme == "http" || u.Scheme == "https" || u.Scheme == "") {
+		return destination, nil
+	}
+	if u.Scheme != "" || u.Path == "" || strings.Contains(u.Path, "\\") {
+		return "", sys_error.ArticlePreviewUnavailableErr
+	}
+	name := filepath.FromSlash(u.Path)
+	if strings.HasPrefix(u.Path, "/") {
+		name = strings.TrimPrefix(name, string(filepath.Separator))
+	} else {
+		name = filepath.Join(a.articleDir, name)
+	}
+	if !a.isPublicImagePath(filepath.Clean(name)) {
+		return "", sys_error.ArticlePreviewUnavailableErr
+	}
+	actual, err := a.resolveStoragePath(name, true)
+	if err != nil {
+		return "", err
+	}
+	if !a.isPublicImagePath(actual) {
+		return "", sys_error.ArticlePreviewUnavailableErr
+	}
+	path := filepath.ToSlash(actual)
+	segments := strings.Split(path, "/")
+	for i, segment := range segments {
+		segments[i] = url.PathEscape(segment)
+	}
+	result := *a.assetBase
+	result.Path = strings.TrimRight(result.Path, "/") + "/" + path
+	result.RawPath = strings.TrimRight(a.assetBase.EscapedPath(), "/") + "/" + strings.Join(segments, "/")
+	result.RawQuery, result.ForceQuery = u.RawQuery, u.ForceQuery
+	result.Fragment, result.RawFragment = u.Fragment, u.RawFragment
+	return result.String(), nil
+}
+
+// isPublicImagePath 检查 Nginx 对隐藏路径分量和 .md 的限制.
+func (a *Article) isPublicImagePath(name string) bool {
+	if !filepath.IsLocal(name) || strings.EqualFold(filepath.Ext(name), ".md") {
+		return false
+	}
+	for _, segment := range strings.Split(filepath.ToSlash(name), "/") {
+		if strings.HasPrefix(segment, ".") {
+			return false
+		}
+	}
+	return true
+}</code></pre></details>
+</section>
+<section id="filesystem"><h2>在存储根内读取正文、定位图片</h2>
+<p><code>readPreviewContent</code> 打开配置的存储根，调用 <code>readMarkdown</code> 读取正文，再将绑定到当前文章的 <code>a.imageURL</code> 传给图片解析器。这些方法见上方的 <a href="#article-source">biz/article.go 完整示例</a>。</p>
+<p><code>readMarkdown</code> 同时识别 <code>testUpload/.../文章.md</code> 和历史写法 <code>/solar-notes-data/testUpload/.../文章.md</code>。根相对存储值没有开头的斜杠，数据库里的绝对路径必须位于配置的根目录下。</p>
+<p>文章和图片都先解析符号链接，用 <code>filepath.Rel</code> 检查真实位置；实际读取文章时再用持有的 <code>os.Root</code> 打开，并检查文件类型。这样同名前缀目录不能冒充存储根。示例使用工程的 Go 1.25 及 Linux/macOS 支持的 <code>O_NONBLOCK</code>。<a href="https://go.dev/blog/osroot">Go 官方对 os.Root 的说明</a>。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">图片目标</th><th scope="col">示例的处理方式</th></tr></thead><tbody>
+<tr><td><code>./img/a.png</code>、<code>../img/a.png</code></td><td>从文章的真实所在目录解析。上一级仍在存储根内即可使用。</td></tr>
+<tr><td><code>/shared/a.png</code></td><td>以 Nginx 站点根为起点。公开地址中不会出现磁盘根目录名。</td></tr>
+<tr><td><code>./图%201.png?v=2#demo</code></td><td>解开输入路径的 URL 编码一次，再按文件名重新编码。保留查询参数及片段，避免把 <code>%20</code> 变成 <code>%2520</code>。</td></tr>
+<tr><td>HTTP(S) 或 <code>//cdn.example/...</code></td><td>原样保留。API 不向该地址发请求。</td></tr>
+<tr><td>普通图片暂缺</td><td>根据最近存在的父目录校验根边界，仍生成图片 URL。浏览器收到该图片的 404，其余正文仍可预览。</td></tr>
+<tr><td>越界、失效符号链接、隐藏路径、指向 <code>.md</code> 的本地图片</td><td>返回 <code>20401</code>，避免向客户端发出错误的资源地址。示例仅为本地文件与 HTTP(S) 网络图片提供映射，其他带协议的目标按不可预览处理。</td></tr>
+</tbody></table></div>
+</section>
+<section id="markdown"><h2>只替换图片目标，保留 Markdown 源文</h2>
+<p><code>article_preview/markdown.go</code> 使用 Goldmark 定位图片语法。每遇到一个图片目标，<code>RewriteImages</code> 就调用传入的 <code>a.imageURL</code>，由当前文章解析其公开地址。在原始字节上仅替换图片目标，标题、普通链接、行内代码和围栏代码块都可保留。引用式图片与普通链接共用定义时，只把图片的那一次使用展开为行内图片，保留原定义供普通链接使用。此处处理 Markdown 图片语法，原始 HTML 标签留给前端渲染和净化。<a href="https://spec.commonmark.org/0.31.2/#images">CommonMark 图片语法</a>。</p>
+<p>工程在 <code>go.mod</code> 中使用 Goldmark v1.7.16。实现包装了该版本的链接解析器，以便获得原文字节位置。<a href="https://github.com/yuin/goldmark/tree/v1.7.16">Goldmark v1.7.16</a>。</p>
+<details open><summary><small>从模块根目录执行</small>安装 Markdown 解析依赖</summary>
+<pre><code id="sample-dependency">go get github.com/yuin/goldmark@v1.7.16</code></pre></details>
+<p>标准 Markdown 中，含空格的文件名可用 <code>![图](&lt;./img/query plan.jpg&gt;)</code>。为兼容已确认的书稿写法，示例也识别 <code>![执行流程](./img/query plan.jpg)</code> 这种单行、简单标签、未加引号的路径。兼容规则只在解析器处理行内图片的位置生效，代码块里的相同文本会原样保留。</p>
+<details><summary><small>新增完整文件</small>article_preview/markdown.go</summary>
+<pre><code id="sample-markdown" data-path="article_preview/markdown.go">package article_preview
+
+import (
+	"bytes"
+	"errors"
+	"html"
+	"regexp"
+	"sort"
+	"strings"
+
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
+)
+
+// imageEdit 记录一次针对源码字节区间的替换.
+type imageEdit struct {
+	start, end int    // start 和 end 标记左闭右开的字节范围.
+	value      string // value 是新写入的 Markdown 片段.
+}
+
+// imageParser 记录 Goldmark 解析图片时消费的源码位置. 每篇文章创建一个实例.
+type imageParser struct {
+	parser.InlineParser                              // InlineParser 委托给 Goldmark 的标准链接解析器.
+	resolve             func(string) (string, error) // resolve 将单个目标转换为公开 URL.
+	edits               []imageEdit                  // edits 只收集需要改写的图片.
+	err                 error                        // err 保留第一次解析或映射失败的原因.
+}
+
+// RewriteImages 重写图片目标, 并按原字节顺序拼回其余正文.
+func RewriteImages(source []byte, resolve func(string) (string, error)) (string, error) {
+	p := &amp;imageParser{InlineParser: parser.NewLinkParser(), resolve: resolve}
+	inlines := parser.DefaultInlineParsers()
+	for i, entry := range inlines {
+		if entry.Value == p.InlineParser {
+			inlines[i].Value = p
+		}
+	}
+	markdown := parser.NewParser(
+		parser.WithBlockParsers(parser.DefaultBlockParsers()...),
+		parser.WithInlineParsers(inlines...),
+		parser.WithParagraphTransformers(parser.DefaultParagraphTransformers()...),
+	)
+	markdown.Parse(text.NewReader(source))
+	if p.err != nil {
+		return "", p.err
+	}
+	sort.Slice(p.edits, func(i, j int) bool { return p.edits[i].start &lt; p.edits[j].start })
+	var out strings.Builder
+	cursor := 0
+	for _, edit := range p.edits {
+		if edit.start &lt; cursor || edit.end &lt; edit.start || edit.end &gt; len(source) {
+			return "", errors.New("invalid Markdown image range")
+		}
+		out.Write(source[cursor:edit.start])
+		out.WriteString(edit.value)
+		cursor = edit.end
+	}
+	out.Write(source[cursor:])
+	return out.String(), nil
+}
+
+// CloseBlock 转发标准解析器的收尾操作, 防止链接状态跨段落残留.
+func (p *imageParser) CloseBlock(parent ast.Node, r text.Reader, ctx parser.Context) {
+	p.InlineParser.(parser.CloseBlocker).CloseBlock(parent, r, ctx)
+}
+
+// legacyImage 兼容简单单行图片中带裸空格的文件名. 标准标题和尖括号写法交给 Goldmark.
+var legacyImage = regexp.MustCompile(`^!\[[^\[\]\\\x60\r\n]*\]\(([^()&lt;&gt;"'\\\t\r\n ]+(?: +[^()&lt;&gt;"'\\\t\r\n ]+)+)\)`)
+
+// Parse 在解析器处理行内语法时定位图片, 记录真正需要替换的区间.
+func (p *imageParser) Parse(parent ast.Node, r text.Reader, ctx parser.Context) ast.Node {
+	line, start := r.PeekLine()
+	if line[0] == '!' {
+		if match := legacyImage.FindSubmatchIndex(line); match != nil {
+			p.replace(line[match[2]:match[3]], start.Start+match[2], start.Start+match[3], nil)
+			r.Advance(match[1])
+			return ast.NewString(line[:match[1]])
+		}
+	}
+	lineNo, saved := r.Position()
+	node := p.InlineParser.Parse(parent, r, ctx)
+	img, ok := node.(*ast.Image)
+	if !ok || len(img.Destination) == 0 {
+		return node
+	}
+	endLine, end := r.Position()
+	afterLabel := start.Start + 1
+	if len(line) &gt; 1 &amp;&amp; line[1] == '(' &amp;&amp; end.Start &gt; afterLabel {
+		// 只定位目标, 保留括号, 标题及其间的排版.
+		r.SetPosition(lineNo, saved)
+		r.Advance(2)
+		r.SkipSpaces()
+		_, dest := r.Position()
+		from := dest.Start
+		if r.Peek() == '&lt;' {
+			from++
+		}
+		r.SetPosition(endLine, end)
+		to := from + len(img.Destination)
+		if from &lt; 0 || to &gt; len(r.Source()) || !bytes.Equal(r.Source()[from:to], img.Destination) {
+			p.err = errors.New("cannot locate Markdown image destination")
+			return node
+		}
+		p.replace(img.Destination, from, to, nil)
+	} else {
+		// 把这次图片引用展开为行内图片, 普通链接可以继续使用同一份引用定义.
+		p.replace(img.Destination, afterLabel, end.Start, img)
+	}
+	return node
+}
+
+// markdownEscape 匹配单个反斜杠标点转义或带分号的字符实体.
+var markdownEscape = regexp.MustCompile(`\\[[:punct:]]|&amp;#(?:[0-9]{1,7}|[xX][0-9a-fA-F]{1,6});|&amp;[A-Za-z][A-Za-z0-9]*;`)
+
+// markdownValue 一次解开原文中的转义和实体, 保留 URL 百分号编码及转义后产生的字面文本.
+func markdownValue(raw []byte) string {
+	return markdownEscape.ReplaceAllStringFunc(string(raw), decodeMarkdownEscape)
+}
+
+// decodeMarkdownEscape 保留未知的实体名称, 数字实体按十进制或显式十六进制解码.
+func decodeMarkdownEscape(token string) string {
+	if token[0] == '\\' {
+		return token[1:]
+	}
+	if token[1] == '#' {
+		return html.UnescapeString(token)
+	}
+	if entity, ok := util.LookUpHTML5EntityByName(token[1 : len(token)-1]); ok {
+		return string(entity.Characters)
+	}
+	return token
+}
+
+// urlSyntax 保护目标中的 Markdown 定界符和字符实体.
+var urlSyntax = strings.NewReplacer("(", "%28", ")", "%29", "&lt;", "%3C", "&gt;", "%3E",
+	" ", "%20", "\\", "%5C", "\r", "%0D", "\n", "%0A", "&amp;", "&amp;amp;")
+
+// replace 仅在目标变化时记录替换, 外部 HTTP(S) 图片可完整保留原文.
+func (p *imageParser) replace(raw []byte, start, end int, ref *ast.Image) {
+	if p.err != nil {
+		return
+	}
+	value := markdownValue(raw)
+	target, err := p.resolve(value)
+	if err != nil {
+		p.err = err
+		return
+	}
+	if target == value {
+		return
+	}
+	target = urlSyntax.Replace(target)
+	if ref != nil {
+		if len(ref.Title) &gt; 0 {
+			title := html.EscapeString(markdownValue(ref.Title))
+			title = strings.NewReplacer("\\", "\\\\", "\r", "&amp;#13;", "\n", "&amp;#10;").Replace(title)
+			target += ` "` + title + `"`
+		}
+		target = "(" + target + ")"
+	}
+	p.edits = append(p.edits, imageEdit{start: start, end: end, value: target})
+}</code></pre></details>
+</section>
+<section id="http"><h2>绑定请求，组装 DTO，注册路由</h2>
+<p>控制器沿用目录接口“只接收一个完整 JSON 对象”的绑定方式。已有的 <code>bindCatalogueRequest</code> 是另一个控制器包的私有函数，本示例在文章控制器内完成绑定。全局中间件已处理请求体大小和管理员鉴权。将下面一条路由追加至现有 <code>v1</code> 分组，保留当前只为登录配置的免鉴权规则。</p>
+<details><summary><small>新增完整文件</small>controller/v1/article/article.go</summary>
+<pre><code id="sample-controller" data-path="controller/v1/article/article.go">package article
+
+import (
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"strconv"
+
+	"SolarNotesAdminAPI/biz"
+	reqArticle "SolarNotesAdminAPI/param/req/v1/article"
+	respArticle "SolarNotesAdminAPI/param/resp/v1/article"
+	"SolarNotesAdminAPI/resp_body"
+	"SolarNotesAdminAPI/sys_error"
+
+	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+)
+
+// bindPreview 读取一个 JSON 对象, 检查多余输入并执行 binding 校验.
+func bindPreview(c *gin.Context, req *reqArticle.PreviewReq) error {
+	decoder := json.NewDecoder(c.Request.Body)
+	err := decoder.Decode(req)
+	if err != nil {
+		return err
+	}
+	err = decoder.Decode(&amp;struct{}{})
+	if err != io.EOF {
+		return errors.New("request body must contain one JSON object")
+	}
+	return binding.Validator.ValidateStruct(req)
+}
+
+// Preview 用工程的统一包装器返回文件预览或公开的业务错误.
+func Preview(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	body := &amp;resp_body.RespBody{}
+	req := &amp;reqArticle.PreviewReq{}
+	err := bindPreview(c, req)
+	if err != nil {
+		body.ValidateError(err)
+		c.JSON(http.StatusOK, body)
+		return
+	}
+
+	article := &amp;biz.Article{}
+	err = article.Preview(c.Request.Context(), req)
+	if err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, sys_error.CatalogueNotFoundErr):
+			body.CatalogueNotFoundError()
+		case errors.Is(err, sys_error.ArticlePreviewUnavailableErr):
+			body.ArticlePreviewUnavailableError()
+		case errors.As(err, &amp;dbErr):
+			body.DBError(dbErr)
+		default:
+			body.InternalError(err)
+		}
+		c.JSON(http.StatusOK, body)
+		return
+	}
+
+	dto := &amp;respArticle.PreviewResp{
+		ID:      strconv.FormatInt(article.ID, 10),
+		Title:   article.Title,
+		Content: article.Content,
+	}
+	body.Success(map[string]any{"article": dto})
+	c.JSON(http.StatusOK, body)
+}</code></pre></details><details open><summary><small>追加到现有 import 块</small>main.go</summary>
+<pre><code id="sample-route-import" data-path="main.go">"SolarNotesAdminAPI/controller/v1/article"</code></pre></details><details open><summary><small>追加到已有 v1 分组</small>main.go · newRouter</summary>
+<pre><code id="sample-route" data-path="main.go">v1.POST("/article/preview", article.Preview)</code></pre></details>
+<p>请求成功后，前端将 <code>data.article.content</code> 转成 HTML，净化后展示。图片由浏览器直接向 Nginx 加载。点击文件夹仍执行目录导航，预览失败时保留目录位置。</p>
+</section>
+<section id="verify"><h2>用真实文件和边界样例验收</h2>
+<p>在 Postman 的 Authorization 中选择 <code>Bearer Token</code>，填入登录返回的完整 JWT，Body 选择 <code>raw → JSON</code>。用目录树中实际存在的文件节点 ID 发送第一节的请求。数据库未变化时，设计文档里的 <code>2123684178049376261</code> 对应 <code>0. 大致过程.md</code>。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">操作</th><th scope="col">应看到的结果</th></tr></thead><tbody>
+<tr><td>预览真实《0. 大致过程.md》</td><td><code>code=200</code>，标题与所点节点一致，正文保留换行。“查询请求执行过程”图片 URL 位于 <code>/testUpload/</code> 下并逐段编码。浏览器打开图片可见 JPEG，直接打开同目录的 Markdown 得到 403。</td></tr>
+<tr><td>选择文章主键与目录节点 ID 不同的文件，用该节点 ID 预览</td><td>按 <code>article.catalogue_id</code> 查到关联行。响应的 <code>data.article.id</code> 应为 JSON 字符串，逐位等于该行 <code>article.id</code> 的十进制值。</td></tr>
+<tr><td>用同一个 <code>biz.Article</code> 先后预览两个目录里的文章，都引用 <code>./img/a.png</code></td><td>各自的图片 URL 使用各自的文章目录。中间一次预览即使失败，下一次也能正常定位图片。</td></tr>
+<tr><td>使用开发环境中的相对路径记录与旧绝对路径记录</td><td>指向同一文件时，两次得到相同正文及图片 URL。比较读取前后的源文件，字节应一致。</td></tr>
+<tr><td>隐藏书里的隐藏或待排文件；以及一个空 Markdown</td><td>合法管理员分别得到 <code>200</code>；空文件的 <code>content</code> 是空字符串。</td></tr>
+<tr><td>正文混排本地图片、普通链接、外链、引用式图片和代码示例</td><td>本地图片能加载；普通链接和外链保持原文；代码里的 <code>![图](...)</code> 是可阅读的示例。中文、裸空格、已编码空格以及同一图片的多处引用均可验证。</td></tr>
+<tr><td>节点已删除；节点是文件夹；漏文章行或正文文件</td><td>已删除返回 <code>20301</code>，其余返回 <code>20401</code>。内部服务器路径不出现在失败响应中。</td></tr>
+<tr><td>无令牌、过期令牌；数值 ID 或多个 JSON 对象</td><td>鉴权分别返回 <code>20004</code>、<code>20003</code>；携带有效令牌但请求不合法时为 <code>10101</code>。</td></tr>
+<tr><td>越界路径、越界符号链接；合法目录中的普通图片缺失</td><td>前两者返回 <code>20401</code>。普通缺图仍返回正文，单独的图片请求返回 404。</td></tr>
+<tr><td>API 进程所在机器缺存储挂载，或进程没有读取权限</td><td>根目录打不开或读取权限不足时，接口返回 <code>500</code>。核对该进程实际看到的 <code>storage.root_dir</code>。</td></tr>
+</tbody></table></div>
+<p class="note"><strong>已核对的样例。</strong> 对设计文档中的真实地址发起 HTTP HEAD，Nginx 对图片返回 <code>200 image/jpeg</code>，对同目录的 <code>.md</code> 返回 <code>403</code>。在临时存储根用书稿副本运行本文的读取和改写代码，478 个 Markdown 文件中的 273 处本地图片均映射到实际文件。该验证独立于管理 API 的部署。</p>
+</section></main>
+</div><script>
+  const controls = document.querySelector('.tools');
+  controls.hidden = false;
+  controls.addEventListener('click', (event) => {
+    const choice = event.target.dataset.open;
+    if (choice === undefined) return;
+    for (const panel of document.querySelectorAll('main details')) panel.open = choice === 'true';
+  });
+  for (const block of document.querySelectorAll('details pre code')) {
+    const toolbar = document.createElement('div');
+    toolbar.className = 'copy';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = '复制代码';
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(block.textContent);
+        button.textContent = '已复制';
+      } catch {
+        const range = document.createRange();
+        range.selectNodeContents(block);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        button.textContent = '已选中，请手动复制';
+      }
+    });
+    toolbar.append(button);
+    block.closest('details').append(toolbar);
+  }
+</script></body></html>

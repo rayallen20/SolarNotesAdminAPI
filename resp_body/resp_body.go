@@ -139,3 +139,11 @@ func (r *RespBody) CatalogueNotFoundError() {
 func (r *RespBody) CatalogueOrderChangedError() {
 	r.failure(CatalogueOrderChangedCode, sys_error.CatalogueOrderChangedErr.Error())
 }
+
+// ArticlePreviewUnavailableCode 表示已存在的节点暂时无法预览.
+const ArticlePreviewUnavailableCode = 20401
+
+// ArticlePreviewUnavailableError 返回稳定的业务码和消息.
+func (r *RespBody) ArticlePreviewUnavailableError() {
+	r.failure(ArticlePreviewUnavailableCode, sys_error.ArticlePreviewUnavailableErr.Error())
+}
