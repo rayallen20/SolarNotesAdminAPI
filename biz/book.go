@@ -101,3 +101,47 @@ func (b *Book) List(ctx context.Context, req *reqBook.ListReq) ([]*Book, int64, 
 
 	return books, total, page.TotalPages(total), nil
 }
+
+// Options 本函数用于展示给定天体下的书籍选项,用于前端下拉选择
+func (b *Book) Options(ctx context.Context, req *reqBook.OptionsReq) ([]Book, error) {
+	if b == nil {
+		err := &sys_error.InternalError{Cause: errors.New("biz.Book.Options: receiver b (*biz.Book) is nil")}
+		return nil, err
+	}
+
+	if ctx == nil {
+		err := &sys_error.InternalError{Cause: errors.New("biz.Book.Options: request context (ctx) is nil")}
+		return nil, err
+	}
+	if req == nil {
+		err := &sys_error.InternalError{Cause: errors.New("biz.Book.Options: options request (req) is nil")}
+		return nil, err
+	}
+	if req.Planet == nil {
+		err := &sys_error.InternalError{Cause: errors.New("biz.Book.Options: planet reference (req.Planet) is nil")}
+		return nil, err
+	}
+
+	orm := &model.Book{}
+	records, err := orm.OptionsByPlanetID(ctx, req.Planet.ID)
+	if err != nil {
+		if errors.Is(err, model.PlanetNotFoundErr) {
+			return nil, sys_error.BookPlanetNotFoundErr
+		}
+
+		err = &sys_error.DatabaseError{Cause: err}
+		return nil, err
+	}
+
+	books := make([]Book, 0, len(records))
+	for _, record := range records {
+		books = append(books, Book{
+			ID:            record.ID,
+			Title:         record.Title,
+			Sort:          record.Sort,
+			DisplayStatus: record.DisplayStatus,
+		})
+	}
+
+	return books, nil
+}

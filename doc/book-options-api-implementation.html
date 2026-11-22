@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="为 Solar Notes 目录管理页面实现按天体读取书籍选项的管理接口，包含 Go 代码、响应约定与 Postman 验收用例。">
+  <title>书籍下拉选项 API 实现 · Solar Notes</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #192f29; --muted: #53665e; --green: #205e49; --line: #cddbd2;
+      --paper: #f7f9f6; --soft: #e7f1e9; --code: #142f29;
+      --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font: 16px/1.8 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    a { color: var(--green); text-underline-offset: .2em; }
+    :focus-visible { outline: 3px solid #247dab; outline-offset: 3px; }
+    .page { max-width: 78rem; margin: auto; padding: 3rem 2.5rem 5rem; display: grid; grid-template-columns: 12rem minmax(0,1fr); gap: 3.75rem; }
+    aside { align-self: start; position: sticky; top: 2rem; }
+    .project { font-weight: 750; letter-spacing: .03em; }
+    nav { display: grid; margin-top: 1rem; border-left: 2px solid var(--line); }
+    nav a { padding: .28rem .85rem; text-decoration: none; }
+    nav a:hover { background: var(--soft); text-decoration: underline; }
+    main { min-width: 0; }
+    header { border-bottom: 1px solid var(--line); padding-bottom: 1.1rem; }
+    .endpoint { color: var(--green); font: 650 .95rem/1.6 var(--mono); }
+    h1 { font-size: clamp(2rem, 4.2vw, 3.15rem); line-height: 1.18; margin: .55rem 0 1rem; }
+    header p { color: var(--muted); }
+    section { margin-top: 2.6rem; scroll-margin-top: 1rem; }
+    h2 { font-size: 1.55rem; line-height: 1.4; margin: 0 0 .65rem; }
+    p { margin: .7rem 0; }
+    :not(pre) > code { font: .9em/1.6 var(--mono); background: var(--soft); padding: .1em .28em; border-radius: .25rem; overflow-wrap: anywhere; }
+    details { margin: 1rem 0; background: white; border: 1px solid var(--line); border-radius: .6rem; overflow: hidden; }
+    summary { padding: .65rem .95rem; cursor: pointer; font-weight: 650; overflow-wrap: anywhere; }
+    summary small { font-weight: 500; color: var(--muted); margin-right: .65rem; }
+    pre { margin: 0; padding: 1.05rem 1.2rem; background: var(--code); color: #f0f7ed; overflow-x: auto; tab-size: 4; }
+    pre code { font: .87rem/1.65 var(--mono); }
+    .copy { display: flex; justify-content: flex-end; padding: .3rem .75rem; border-top: 1px solid var(--line); }
+    .copy button { color: var(--green); background: white; border: 1px solid var(--line); border-radius: .3rem; padding: .22rem .55rem; font: inherit; font-size: .8rem; cursor: pointer; }
+    .note { border-left: 3px solid var(--green); background: var(--soft); padding: .6rem .9rem; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: .5rem; }
+    table { border-collapse: collapse; width: 100%; font-size: .95rem; background: white; }
+    th, td { padding: .65rem .8rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    thead { background: var(--soft); } tbody tr:last-child td { border-bottom: 0; }
+    @media (max-width: 52rem) {
+      .page { display: block; padding: 1rem 1rem 3rem; } aside { position: static; margin-bottom: 1.6rem; }
+      nav { display: flex; flex-wrap: wrap; gap: .15rem .85rem; border: 0; margin-top: .25rem; }
+      nav a { padding: .15rem 0; font-size: .88rem; } th, td { padding: .45rem; }
+    }
+    @media print {
+      .page { display: block; padding: 0; } aside, .copy { display: none; }
+      pre { white-space: pre-wrap; overflow-wrap: anywhere; color: black; background: white; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <aside>
+    <div class="project">Solar Notes · 管理 API</div>
+    <nav aria-label="本文目录">
+      <a href="#contract">接口约定</a>
+      <a href="#dto">请求与响应 DTO</a>
+      <a href="#model">模型查询</a>
+      <a href="#biz">业务转换</a>
+      <a href="#controller">控制器与路由</a>
+      <a href="#verify">Postman 验收</a>
+    </nav>
+  </aside>
+  <main>
+    <header>
+      <div class="endpoint">POST /v1/book/options</div>
+      <h1>按天体读取书籍选项</h1>
+      <p>管理员在目录管理页选定天体后，下拉框需要该天体的全部书籍，包括隐藏书籍和尚未导入目录的书籍。选项显示书名，选中后用书籍 ID 请求目录树。</p>
+      <p><a href="../../SolarNotesAdmin/doc/catalogue-management-prototype.html#book-select">目录管理原型</a> · <a href="../../SolarNotesAdmin/doc/catalogue-api-design.html#books">接口设计第 ② 项</a></p>
+    </header>
+
+    <section id="contract">
+      <h2>接口约定</h2>
+      <p>客户端先通过 <code>GET /v1/planet/list</code> 获得天体 ID，再提交以下请求。沿用管理员 Bearer 鉴权，设置 <code>Content-Type: application/json</code>。雪花 ID 在 JSON 中使用十进制字符串，<code>sort</code> 使用 JSON 整数。</p>
+      <details open>
+        <summary><small>JSON</small>请求体</summary>
+        <pre><code id="request-json">{
+  "planet": {
+    "id": "2123435429930733568"
+  }
+}</code></pre>
+      </details>
+      <details open>
+        <summary><small>HTTP 200</small>同一天体下有两本书</summary>
+        <pre><code id="response-json">{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "books": [
+      {
+        "id": "2123435620763176960",
+        "title": "MySQL是怎样运行的",
+        "sort": 1,
+        "display_status": "visible"
+      },
+      {
+        "id": "2123435620763176961",
+        "title": "查询优化笔记",
+        "sort": 3,
+        "display_status": "hidden"
+      }
+    ]
+  }
+}</code></pre>
+      </details>
+      <p>查询按 <code>planet_id</code> 过滤，按数值 <code>sort ASC, id ASC</code> 排序，一次返回全部选项。现有 <code>POST /v1/book/list</code> 服务于全库分页表格，只在前端过滤其中一页会漏掉其他页的书。</p>
+      <p class="note"><strong>空书单与无效选择需要分别处理。</strong> 天体存在且没有书时返回 <code>{"code":200,"message":"success","data":{"books":[]}}</code>。有效格式的 ID 指向不存在的天体时返回业务码 <code>20102</code> 和 <code>data: {}</code>，页面据此刷新天体选项。</p>
+    </section>
+
+    <section id="dto">
+      <h2>定义请求与响应 DTO</h2>
+      <p><code>planet</code> 在请求体顶层。外层指针配合 <code>required</code> 校验缺失或 <code>null</code>；内层的 <code>,string</code> 负责把字符串解码为 <code>int64</code>，<code>gt=0</code> 拦截缺失、零和负值。非法类型及超出 <code>int64</code> 范围的 ID 在绑定阶段返回参数错误。</p>
+      <details open>
+        <summary><small>新增文件</small>param/req/v1/book/options.go</summary>
+        <pre><code id="req-options">package book
+
+// OptionsReq 定义按天体读取书籍选项的请求.
+type OptionsReq struct {
+	Planet *OptionsPlanetReq `json:"planet" binding:"required"` // Planet 是当前选中的天体.
+}
+
+// OptionsPlanetReq 定义书籍选项查询需要的天体标识.
+type OptionsPlanetReq struct {
+	ID int64 `json:"id,string" binding:"gt=0"` // ID 是以十进制字符串提交的正整数.
+}</code></pre>
+      </details>
+      <p>选项 DTO 仅声明下拉框约定的四个字段。<code>Sort</code> 与 <code>model.Book.Sort</code> 一致，使用 <code>uint32</code>。创建接口的最小值约束仅用于写入；库中已有的 <code>sort = 0</code> 在读取时仍按原值返回。</p>
+      <details open>
+        <summary><small>新增文件</small>param/resp/v1/book/options.go</summary>
+        <pre><code id="resp-option">package book
+
+// OptionResp 定义 data.books 中的一项.
+type OptionResp struct {
+	ID            string `json:"id"`             // ID 是书籍 ID 的十进制字符串.
+	Title         string `json:"title"`          // Title 是下拉框显示的书名.
+	Sort          uint32 `json:"sort"`           // Sort 是书籍在所属天体下的排序值.
+	DisplayStatus string `json:"display_status"` // DisplayStatus 是书籍自身的 visible 或 hidden 状态.
+}</code></pre>
+      </details>
+    </section>
+
+    <section id="model">
+      <h2>在同一快照内确认天体并读取书籍</h2>
+      <p>在 <code>model/book.go</code> 追加 <code>(*Book).OptionsByPlanetID</code>。沿用 <code>ListPage</code> 的只读可重复读事务，第一次查询仅取天体主键，第二次查询四个书籍字段。这样，即使有另一个事务同时删除天体，两次普通读取仍基于同一个 InnoDB 快照。现有文件已导入本段使用的包。</p>
+      <details open>
+        <summary><small>追加方法</small>model/book.go</summary>
+        <pre><code id="model-options">// OptionsByPlanetID 返回一个天体的全部书籍选项, 按 sort 和 id 升序排列.
+func (b *Book) OptionsByPlanetID(ctx context.Context, planetID int64) ([]Book, error) {
+	if b == nil || ctx == nil {
+		return nil, errors.New("nil book model or options context")
+	}
+	if planetID &lt;= 0 {
+		return nil, errors.New("book options planet ID must be positive")
+	}
+	if db.DB == nil {
+		return nil, errors.New("database is not initialized")
+	}
+
+	tx := db.DB.WithContext(ctx).Begin(&amp;sql.TxOptions{
+		Isolation: sql.LevelRepeatableRead,
+		ReadOnly:  true,
+	})
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+	defer tx.Rollback()
+
+	// 先确认天体存在, 以区分无效引用和空书单.
+	var planet Planet
+	err := tx.Select("id").Where("id = ?", planetID).Take(&amp;planet).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, PlanetNotFoundErr
+		}
+		return nil, err
+	}
+
+	var books []Book
+	err = tx.Model(&amp;Book{}).
+		Select("id", "title", "sort", "display_status").
+		Where("planet_id = ?", planetID).
+		Order("sort ASC").
+		Order("id ASC").
+		Find(&amp;books).Error
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit().Error; err != nil {
+		return nil, err
+	}
+	return books, nil
+}</code></pre>
+      </details>
+      <p>用 <code>Take</code> 判断单个天体是否存在，用 <code>Find</code> 读取零到多本书。书籍查询只依赖 <code>book.planet_id</code>，已建的 <code>(planet_id, sort)</code> 唯一索引与此过滤条件匹配。两次读取均不依赖 <code>catalogue</code> 表。</p>
+    </section>
+
+    <section id="biz">
+      <h2>把查询结果转换为业务实体</h2>
+      <p><code>biz.Book.Options</code> 接收完整请求，将模型的天体不存在错误映射为现有的 <code>sys_error.BookPlanetNotFoundErr</code>。当前 <code>fillByORM</code> 会读取已加载的 <code>record.Planet</code>；选项查询只加载书籍字段，因此这里直接填充四个字段。</p>
+      <details open>
+        <summary><small>追加方法</small>biz/book.go</summary>
+        <pre><code id="biz-options">// Options 返回当前选择的天体下可供管理员选择的书籍.
+func (b *Book) Options(ctx context.Context, req *reqBook.OptionsReq) ([]Book, error) {
+	if b == nil {
+		return nil, &amp;sys_error.InternalError{Cause: errors.New("biz.Book.Options: receiver b (*biz.Book) is nil")}
+	}
+	if ctx == nil {
+		return nil, &amp;sys_error.InternalError{Cause: errors.New("biz.Book.Options: request context (ctx) is nil")}
+	}
+	if req == nil {
+		return nil, &amp;sys_error.InternalError{Cause: errors.New("biz.Book.Options: options request (req) is nil")}
+	}
+	if req.Planet == nil {
+		return nil, &amp;sys_error.InternalError{Cause: errors.New("biz.Book.Options: planet reference (req.Planet) is nil")}
+	}
+
+	orm := &amp;model.Book{}
+	records, err := orm.OptionsByPlanetID(ctx, req.Planet.ID)
+	if err != nil {
+		if errors.Is(err, model.PlanetNotFoundErr) {
+			return nil, sys_error.BookPlanetNotFoundErr
+		}
+		return nil, &amp;sys_error.DatabaseError{Cause: err}
+	}
+
+	books := make([]Book, 0, len(records))
+	for _, record := range records {
+		books = append(books, Book{
+			ID:            record.ID,
+			Title:         record.Title,
+			Sort:          record.Sort,
+			DisplayStatus: record.DisplayStatus,
+		})
+	}
+	return books, nil
+}</code></pre>
+      </details>
+    </section>
+
+    <section id="controller">
+      <h2>由控制器组装 DTO 并注册路由</h2>
+      <p>将 <code>Options</code> 追加到现有书籍控制器，与 <code>Create</code>、<code>List</code> 同文件。使用已有的 <code>reqBook</code>、<code>respBook</code> 等导入和统一响应方法。显式初始化响应切片，保证空书单编码为 <code>[]</code>。</p>
+      <details open>
+        <summary><small>追加函数</small>controller/v1/book/book.go</summary>
+        <pre><code id="controller-options">// Options 绑定天体 ID, 并返回目录管理页使用的书籍选项.
+func Options(c *gin.Context) {
+	req := &amp;reqBook.OptionsReq{}
+	respBody := &amp;resp_body.RespBody{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		respBody.ValidateError(err)
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	bookBiz := &amp;biz.Book{}
+	books, err := bookBiz.Options(c.Request.Context(), req)
+	if err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, sys_error.BookPlanetNotFoundErr):
+			respBody.BookPlanetNotFoundError()
+		case errors.As(err, &amp;dbErr):
+			respBody.DBError(dbErr)
+		default:
+			respBody.InternalError(err)
+		}
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	options := make([]respBook.OptionResp, 0, len(books))
+	for _, item := range books {
+		options = append(options, respBook.OptionResp{
+			ID:            strconv.FormatInt(item.ID, 10),
+			Title:         item.Title,
+			Sort:          item.Sort,
+			DisplayStatus: item.DisplayStatus,
+		})
+	}
+	respBody.Success(map[string]any{"books": options})
+	c.JSON(http.StatusOK, respBody)
+}</code></pre>
+      </details>
+      <p>在 <code>main.go</code> 的 <code>newRouter</code> 中，将下面一行加在 <code>v1.POST("/book/list", book.List)</code> 后。<code>v1</code> 提供 <code>/v1</code> 前缀，现有全局 <code>adminAuth.Handle</code> 会校验管理员令牌。</p>
+      <details open>
+        <summary><small>追加路由</small>main.go</summary>
+        <pre><code id="route-options">v1.POST("/book/options", book.Options)</code></pre>
+      </details>
+    </section>
+
+    <section id="verify">
+      <h2>Postman 验收</h2>
+      <p>使用 <code>POST {{base_url}}/v1/book/options</code>，Authorization 选 <strong>Bearer Token</strong> 并填入已登录管理员的 JWT。Body 选 <strong>raw → JSON</strong>。示例 ID 仅用于说明；联调时先用天体列表接口取得实际 ID。以下场景均核对 HTTP 200 响应中的业务码。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">场景</th><th scope="col">预期结果</th></tr></thead>
+          <tbody>
+            <tr><td>选择有可见书和隐藏书的天体，另一个天体也有书</td><td><code>200</code>，仅包含当前天体的全部书籍，两种状态均返回；按 <code>sort</code>、<code>id</code> 升序，书籍 ID 带引号。</td></tr>
+            <tr><td>选中一本尚未导入目录的书所属的天体</td><td><code>200</code>，响应的 <code>books</code> 中包含这本书。</td></tr>
+            <tr><td>选择已创建且没有书籍的天体</td><td><code>200</code>，<code>data</code> 为 <code>{"books":[]}</code>。</td></tr>
+            <tr><td>提交格式正确、库中不存在的天体 ID</td><td><code>20102</code>，<code>message</code> 为“所选天体不存在,请刷新天体选项”，<code>data</code> 为 <code>{}</code>。</td></tr>
+            <tr><td>缺少 <code>planet</code>、传入 <code>{"planet":{}}</code>，或把 ID 写成数字、<code>"0"</code>、<code>"-1"</code>、<code>"abc"</code></td><td><code>10101</code>，由 <code>ShouldBindJSON</code> 返回绑定或校验错误。</td></tr>
+            <tr><td>选择有历史 <code>sort = 0</code> 记录的天体</td><td><code>200</code>，该书排在正排序值之前，<code>sort</code> 为数字 <code>0</code>。</td></tr>
+            <tr><td>移除 Bearer 令牌，或使用已过期且签名有效的令牌</td><td>缺失令牌返回 <code>20004</code>，令牌过期返回 <code>20003</code>。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>数据库查询或提交失败时沿用 <code>10201</code>。开发完成后，可在后台工程根目录运行 <code>go test ./...</code> 检查各包，并使用上述场景核对接口行为。</p>
+    </section>
+  </main>
+</div>
+<script>
+  for (const block of document.querySelectorAll('details pre code')) {
+    const toolbar = document.createElement('div');
+    toolbar.className = 'copy';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = '复制代码';
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(block.textContent);
+        button.textContent = '已复制';
+      } catch {
+        const range = document.createRange();
+        range.selectNodeContents(block);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        button.textContent = '已选中，请手动复制';
+      }
+    });
+    toolbar.append(button);
+    block.closest('details').append(toolbar);
+  }
+</script>
+</body>
+</html>

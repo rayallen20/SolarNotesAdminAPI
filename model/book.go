@@ -240,3 +240,57 @@ func (b *Book) loadPlanets(tx *gorm.DB, records []*Book) error {
 
 	return nil
 }
+
+// OptionsByPlanetID 本函数用于根据给定的天体 ID 查询该天体下的所有书籍选项, 并按排序值升序排列
+func (b *Book) OptionsByPlanetID(ctx context.Context, planetID int64) ([]Book, error) {
+	if b == nil || ctx == nil {
+		return nil, errors.New("nil book model or options context")
+	}
+
+	if planetID <= 0 {
+		return nil, errors.New("book options planet ID must be positive")
+	}
+
+	if db.DB == nil {
+		return nil, errors.New("database is not initialized")
+	}
+
+	tx := db.DB.WithContext(ctx).Begin(&sql.TxOptions{
+		Isolation: sql.LevelRepeatableRead,
+		ReadOnly:  true,
+	})
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+
+	defer tx.Rollback()
+
+	// 先确认天体存在, 以区分无效引用和空书单
+	var planet Planet
+	err := tx.Select("id").Where("id = ?", planetID).Take(&planet).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, PlanetNotFoundErr
+		}
+
+		return nil, err
+	}
+
+	var books []Book
+	err = tx.Model(&Book{}).
+		Select("id", "title", "sort", "display_status").
+		Where("planet_id = ?", planetID).
+		Order("sort ASC").
+		Order("id ASC").
+		Find(&books).Error
+	if err != nil {
+		return nil, err
+	}
+
+	err = tx.Commit().Error
+	if err != nil {
+		return nil, err
+	}
+
+	return books, nil
+}

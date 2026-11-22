@@ -113,3 +113,46 @@ func List(c *gin.Context) {
 
 	c.JSON(http.StatusOK, respBody)
 }
+
+// Options 本函数用于展示给定天体下的书籍选项
+func Options(c *gin.Context) {
+	req := &reqBook.OptionsReq{}
+	respBody := &resp_body.RespBody{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		respBody.ValidateError(err)
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	bookBiz := &biz.Book{}
+	books, err := bookBiz.Options(c.Request.Context(), req)
+	if err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, sys_error.BookPlanetNotFoundErr):
+			respBody.BookPlanetNotFoundError()
+		case errors.As(err, &dbErr):
+			respBody.DBError(dbErr)
+		default:
+			respBody.InternalError(err)
+		}
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	options := make([]respBook.OptionResp, 0, len(books))
+	for _, item := range books {
+		options = append(options, respBook.OptionResp{
+			ID:            strconv.FormatInt(item.ID, 10),
+			Title:         item.Title,
+			Sort:          item.Sort,
+			DisplayStatus: item.DisplayStatus,
+		})
+	}
+
+	data := map[string]any{
+		"books": options,
+	}
+	respBody.Success(data)
+	c.JSON(http.StatusOK, respBody)
+}
