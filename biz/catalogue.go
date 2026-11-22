@@ -3,6 +3,7 @@ package biz
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"SolarNotesAdminAPI/model"
 	reqCatalogue "SolarNotesAdminAPI/param/req/v1/catalogue"
@@ -65,4 +66,37 @@ func (c *Catalogue) Tree(ctx context.Context, req *reqCatalogue.TreeReq) (*Book,
 	}
 
 	return summary, roots, nil
+}
+
+// Reorder 校验编排请求, 使用锁定后的同级目录行比较快照并保存新顺序.
+func (c *Catalogue) Reorder(ctx context.Context, req *reqCatalogue.ReorderReq) error {
+	if c == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Catalogue.Reorder: nil receiver")}
+	}
+	if ctx == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Catalogue.Reorder: nil context")}
+	}
+	if req == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Catalogue.Reorder: nil request")}
+	}
+	plan, err := newReorderPlan(req.Catalogue)
+	if err != nil {
+		return err
+	}
+	orm := &model.Catalogue{}
+	err = orm.ReorderChildren(ctx, req.Catalogue.ParentID, plan.changes)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, model.CatalogueNotFoundErr):
+		return sys_error.CatalogueNotFoundErr
+	case errors.Is(err, model.BookNotFoundErr):
+		return sys_error.BookNotFoundErr
+	case errors.Is(err, model.CatalogueParentNotFolderErr):
+		return fmt.Errorf("%w: parent_id must reference a folder", sys_error.CatalogueOrderInvalidErr)
+	case errors.Is(err, model.CatalogueOrderChangedErr), errors.Is(err, sys_error.CatalogueOrderChangedErr):
+		return sys_error.CatalogueOrderChangedErr
+	default:
+		return &sys_error.DatabaseError{Cause: err}
+	}
 }

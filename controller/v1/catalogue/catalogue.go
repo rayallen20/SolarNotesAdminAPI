@@ -22,7 +22,7 @@ func Tree(c *gin.Context) {
 	req := &reqCatalogue.TreeReq{}
 
 	body := &resp_body.RespBody{}
-	if err := bindTreeRequest(c, req); err != nil {
+	if err := bindCatalogueRequest(c, req); err != nil {
 		body.ValidateError(err)
 		c.JSON(http.StatusOK, body)
 		return
@@ -57,19 +57,15 @@ func Tree(c *gin.Context) {
 	c.JSON(http.StatusOK, body)
 }
 
-// bindTreeRequest 只接受一个完整 JSON 值, 然后执行 Gin 的字段校验.
-func bindTreeRequest(c *gin.Context, req *reqCatalogue.TreeReq) error {
+// bindCatalogueRequest 读取一个完整 JSON 对象, 然后校验目标请求的 binding 标签.
+func bindCatalogueRequest(c *gin.Context, req any) error {
 	decoder := json.NewDecoder(c.Request.Body)
 	if err := decoder.Decode(req); err != nil {
 		return err
 	}
-
-	err := decoder.Decode(&struct{}{})
-	if err != io.EOF {
-		err = errors.New("request body must contain one JSON object")
-		return err
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return errors.New("request body must contain one JSON object")
 	}
-
 	return binding.Validator.ValidateStruct(req)
 }
 
@@ -95,4 +91,39 @@ func treeNodeResponses(nodes []*biz.Catalogue) []*respCatalogue.TreeNodeResp {
 	}
 
 	return result
+}
+
+// Reorder 保存一个文件夹直接子项的阅读顺序和相应的显隐状态.
+func Reorder(c *gin.Context) {
+	req := &reqCatalogue.ReorderReq{}
+	body := &resp_body.RespBody{}
+	if err := bindCatalogueRequest(c, req); err != nil {
+		body.ValidateError(err)
+		c.JSON(http.StatusOK, body)
+		return
+	}
+
+	catalogue := &biz.Catalogue{}
+	if err := catalogue.Reorder(c.Request.Context(), req); err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, sys_error.CatalogueOrderInvalidErr):
+			body.ValidateError(err)
+		case errors.Is(err, sys_error.CatalogueNotFoundErr):
+			body.CatalogueNotFoundError()
+		case errors.Is(err, sys_error.CatalogueOrderChangedErr):
+			body.CatalogueOrderChangedError()
+		case errors.Is(err, sys_error.BookNotFoundErr):
+			body.BookNotFoundError()
+		case errors.As(err, &dbErr):
+			body.DBError(dbErr)
+		default:
+			body.InternalError(err)
+		}
+		c.JSON(http.StatusOK, body)
+		return
+	}
+
+	body.Success(map[string]any{})
+	c.JSON(http.StatusOK, body)
 }

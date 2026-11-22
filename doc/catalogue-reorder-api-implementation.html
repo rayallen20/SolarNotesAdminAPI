@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Solar Notes 保存同级目录阅读顺序的 Go 实现参考，涵盖快照校验、显隐转换、InnoDB 事务与并发验收。">
+<title>保存同级目录的阅读顺序 · Solar Notes</title><style>
+    :root {
+      color-scheme: light;
+      --ink: #192f29; --muted: #53665e; --green: #205e49; --line: #cddbd2;
+      --paper: #f7f9f6; --soft: #e7f1e9; --code: #142f29;
+      --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font: 16px/1.8 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    a { color: var(--green); text-underline-offset: .2em; }
+    :focus-visible { outline: 3px solid #247dab; outline-offset: 3px; }
+    .page { max-width: 78rem; margin: auto; padding: 3rem 2.5rem 5rem; display: grid; grid-template-columns: 12rem minmax(0,1fr); gap: 3.75rem; }
+    aside { align-self: start; position: sticky; top: 2rem; }
+    .project { font-weight: 750; letter-spacing: .03em; }
+    nav { display: grid; margin-top: 1rem; border-left: 2px solid var(--line); }
+    nav a { padding: .28rem .85rem; text-decoration: none; }
+    nav a:hover { background: var(--soft); text-decoration: underline; }
+    main { min-width: 0; }
+    header { border-bottom: 1px solid var(--line); padding-bottom: 1.1rem; }
+    .endpoint { color: var(--green); font: 650 .95rem/1.6 var(--mono); }
+    h1 { font-size: clamp(2rem, 4.2vw, 3.15rem); line-height: 1.18; margin: .55rem 0 1rem; }
+    header p { color: var(--muted); }
+    section { margin-top: 2.6rem; scroll-margin-top: 1rem; }
+    h2 { font-size: 1.55rem; line-height: 1.4; margin: 0 0 .65rem; }
+    p { margin: .7rem 0; }
+    :not(pre) > code { font: .9em/1.6 var(--mono); background: var(--soft); padding: .1em .28em; border-radius: .25rem; overflow-wrap: anywhere; }
+    details { margin: 1rem 0; background: white; border: 1px solid var(--line); border-radius: .6rem; overflow: hidden; }
+    summary { padding: .65rem .95rem; cursor: pointer; font-weight: 650; overflow-wrap: anywhere; }
+    summary small { font-weight: 500; color: var(--muted); margin-right: .65rem; }
+    pre { margin: 0; padding: 1.05rem 1.2rem; background: var(--code); color: #f0f7ed; overflow-x: auto; tab-size: 4; }
+    pre code { font: .87rem/1.65 var(--mono); }
+    .copy { display: flex; justify-content: flex-end; padding: .3rem .75rem; border-top: 1px solid var(--line); }
+    .copy button { color: var(--green); background: white; border: 1px solid var(--line); border-radius: .3rem; padding: .22rem .55rem; font: inherit; font-size: .8rem; cursor: pointer; }
+    .note { border-left: 3px solid var(--green); background: var(--soft); padding: .6rem .9rem; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: .5rem; }
+    table { border-collapse: collapse; width: 100%; font-size: .95rem; background: white; }
+    th, td { padding: .65rem .8rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    thead { background: var(--soft); } tbody tr:last-child td { border-bottom: 0; }
+    @media (max-width: 52rem) {
+      .page { display: block; padding: 1rem 1rem 3rem; } aside { position: static; margin-bottom: 1.6rem; }
+      nav { display: flex; flex-wrap: wrap; gap: .15rem .85rem; border: 0; margin-top: .25rem; }
+      nav a { padding: .15rem 0; font-size: .88rem; } th, td { padding: .45rem; }
+    }
+    @media print {
+      .page { display: block; padding: 0; } aside, .copy { display: none; }
+      pre { white-space: pre-wrap; overflow-wrap: anywhere; color: black; background: white; }
+    }
+  
+    .flow { margin: 1.3rem 0; padding: .65rem 1rem; background: var(--soft); border-radius: .45rem; }
+    .flow p { margin: .2rem 0; }
+    h3 { margin: 1.4rem 0 .4rem; font-size: 1.1rem; }
+    .tools button { cursor: pointer; font: inherit; font-size: .9rem; padding: .25rem .75rem; margin-right: .4rem; border: 1px solid var(--line); background: white; color: var(--green); border-radius: .35rem; }
+    .tools { margin-top: .9rem; }
+    .table-wrap td:first-child { min-width: 6rem; }
+    @media print { .tools { display: none; } }
+</style></head><body><div class="page"><aside><div class="project">Solar Notes · 管理 API</div>
+<nav aria-label="本文目录"><a href="#contract">请求与响应</a><a href="#transitions">排序与显隐</a><a href="#layers">实现位置</a><a href="#input">请求和业务码</a><a href="#biz">业务入口与校验</a><a href="#transaction">加锁与写入</a><a href="#http">控制器与路由</a><a href="#verify">联调与并发验收</a></nav></aside>
+<main><header><div class="endpoint">POST /v1/catalogue/reorder</div>
+<h1>保存一个父目录下的阅读顺序</h1>
+<p>管理员在抽屉内调整直接子项，点击「保存排序」时提交一次写请求。后端核对打开抽屉时的分组，按目标顺序分配序号，并在同一个事务里保存对应的显隐状态。</p>
+<p><a href="../../SolarNotesAdmin/doc/catalogue-api-design.html#order">前端接口设计 · 第 ④ 项</a> · <a href="../../SolarNotesAdmin/doc/catalogue-management-prototype.html#order-dialog">排序抽屉原型</a> · <a href="catalogue-tree-api-implementation.html#contract">上一步的完整目录树接口</a></p><div class="tools" hidden><button type="button" data-open="true">展开全部示例</button><button type="button" data-open="false">收起全部示例</button></div></header>
+<section id="contract"><h2>从抽屉快照到一次保存</h2>
+<p>用管理员 Bearer 令牌发送 <code>POST /v1/catalogue/reorder</code>，请求体为 <code>application/json</code>。<code>catalogue.parent_id</code> 是当前文件夹本身的雪花 ID。编排顶层章节时传书籍根目录的 ID；根节点用作父项时也有自己的正数 ID。所有 ID 均以十进制字符串提交。</p><details open><summary><small>请求 JSON</small>三个章节原先全部待排，先排入第三章和第一章</summary>
+<pre><code id="order-request">{
+  "catalogue": {
+    "parent_id": "2123684178040987648",
+    "expected": {
+      "sorted_children": [],
+      "unsorted_children": [
+        {"id": "2123684178049376256"},
+        {"id": "2123684178049376278"},
+        {"id": "2123684178049376301"}
+      ]
+    },
+    "target": {
+      "sorted_children": [
+        {"id": "2123684178049376301"},
+        {"id": "2123684178049376256"}
+      ],
+      "unsorted_children": [
+        {"id": "2123684178049376278"}
+      ]
+    }
+  }
+}</code></pre></details>
+<p>示例仅含三个兄弟节点。正式请求从当前目录树取该父目录的完整 <code>children</code>，分别构造 <code>expected</code> 和 <code>target</code>；折叠、筛选或未勾选的直接子项同样要计入。两份分组均须显式传两个数组，允许空数组。</p><details open><summary><small>HTTP 200</small>事务提交后的成功响应</summary>
+<pre><code id="order-response">{
+  "code": 200,
+  "message": "success",
+  "data": {}
+}</code></pre></details>
+<p>收到成功后重取 <code>POST /v1/catalogue/tree</code>，按 ID 恢复当前目录及展开位置。取消、抽屉中的移动和本地预览均可在前端完成。</p></section>
+<section id="transitions"><h2>用锁定时的分组计算显隐</h2>
+<div class="table-wrap"><table><thead><tr><th scope="col">锁定时分组</th><th scope="col">目标分组</th><th scope="col">最终 sort</th><th scope="col">最终 display_status</th></tr></thead><tbody>
+<tr><td>待排</td><td>已排</td><td>目标位置，从 1 开始</td><td><code>visible</code>，原来为隐藏的待排节点也适用。</td></tr>
+<tr><td>已排</td><td>待排</td><td><code>NULL</code></td><td><code>hidden</code>，清除序号与隐藏在同一事务完成。</td></tr>
+<tr><td>已排</td><td>已排</td><td>目标位置，从 1 开始</td><td>保留当前行的最新显隐值，包含手动隐藏。</td></tr>
+<tr><td>待排</td><td>待排</td><td><code>NULL</code></td><td><code>hidden</code>。</td></tr>
+</tbody></table></div>
+<p>例如上一次已排为「第三章、第一章」，第一章随后被手动隐藏，第二章仍待排。这次把目标设为「第一章、第二章」：第一章得到 <code>1 / hidden</code>，第二章得到 <code>2 / visible</code>，第三章得到 <code>null / hidden</code>。抽屉里把第一章移出又移回，结果仍按「已排 → 已排」处理。</p><details><summary><small>请求 JSON</small>第二次保存：同时移出第三章、加入第二章</summary>
+<pre><code id="order-again">{
+  "catalogue": {
+    "parent_id": "2123684178040987648",
+    "expected": {
+      "sorted_children": [
+        {"id": "2123684178049376301"},
+        {"id": "2123684178049376256"}
+      ],
+      "unsorted_children": [
+        {"id": "2123684178049376278"}
+      ]
+    },
+    "target": {
+      "sorted_children": [
+        {"id": "2123684178049376256"},
+        {"id": "2123684178049376278"}
+      ],
+      "unsorted_children": [
+        {"id": "2123684178049376301"}
+      ]
+    }
+  }
+}</code></pre></details>
+<p>每个父目录独立编号。排序值使用 <code>*uint32</code> 对应 MySQL 可空的 <code>INT UNSIGNED</code>；被编排的子节点最终只有 <code>1..N</code> 或 <code>NULL</code>。父节点、书籍和孙节点都不在本次写集合内，根节点自身的 <code>sort = 0</code> 也得到保留。</p></section>
+<section id="layers"><h2>沿用现有目录业务实体</h2>
+<div class="flow"><p><strong>业务入口</strong>　<code>(*biz.Catalogue).Reorder(ctx, req) error</code></p><p><strong>模型入口</strong>　<code>(*model.Catalogue).ReorderChildren(ctx, parentID, plan) error</code></p></div><p><code>biz.Catalogue</code> 与 <code>biz.Book</code> 继续独立。树接口读取并组装整本书，本次保存只需要父 ID 和这一层的直接子行。在事务中锁定实际行，再调用业务层的具名方法计算变更计划，避免将锁定前的状态带入写入逻辑。</p><div class="table-wrap"><table><thead><tr><th scope="col">放置位置</th><th scope="col">职责</th></tr></thead><tbody>
+<tr><td><code>param/req/v1/catalogue/reorder.go</code></td><td>请求结构、十进制字符串 ID、嵌套字段和数组校验。</td></tr>
+<tr><td><a href="../biz/catalogue.go">biz/catalogue.go</a></td><td>在已有目录实体下追加 <code>Reorder</code> 成员方法，接收完整请求、映射业务错误。</td></tr>
+<tr><td><code>biz/catalogue_reorder.go</code></td><td>校验成员、比对快照、计算最终序号和显隐。复用现有 <code>enum</code> 常量。</td></tr>
+<tr><td><a href="../model/catalogue.go">model/catalogue.go</a></td><td>集中定义 <code>catalogue</code> 表的模型和方法。<code>ReadBookTree</code> 读取整本书的目录，<code>ReorderChildren</code> 保存一个父目录下的顺序。</td></tr>
+<tr><td><code>sys_error/catalogue_error.go</code> · <a href="../resp_body/resp_body.go">resp_body/resp_body.go</a></td><td>集中定义错误及业务码，复用现有统一响应包装器。</td></tr>
+<tr><td><a href="../controller/v1/catalogue/catalogue.go">controller/v1/catalogue/catalogue.go</a> · <a href="../main.go">main.go</a></td><td>同一文件提供树和编排两个处理函数，共用严格 JSON 绑定；在已有鉴权路由组注册。</td></tr>
+</tbody></table></div>
+</section>
+<section id="input"><h2>定义请求和业务错误</h2>
+<p><code>expected</code>、<code>target</code> 用指针区分缺失和已提供。切片上的 <code>required,dive</code> 接受 <code>[]</code>，拒绝缺失或 <code>null</code>，并校验每个引用。客户端仅传 ID；目标数组的位置决定最终序号，显隐取自服务端的转换规则。</p><details><summary><small>新增完整文件</small>param/req/v1/catalogue/reorder.go</summary>
+<pre><code id="reorder-req" data-path="param/req/v1/catalogue/reorder.go" data-mode="new">package catalogue
+
+// ReorderReq 是保存同级阅读顺序的请求体.
+type ReorderReq struct {
+	Catalogue *ReorderCatalogueReq `json:"catalogue" binding:"required"` // Catalogue 描述所选父目录和两份分组.
+}
+
+// ReorderCatalogueReq 标识一次保存操作.
+type ReorderCatalogueReq struct {
+	ParentID int64        `json:"parent_id,string" binding:"gt=0"` // ParentID 为父文件夹本身的 ID.
+	Expected *OrderGroups `json:"expected" binding:"required"`     // Expected 是打开排序抽屉时的分组.
+	Target   *OrderGroups `json:"target" binding:"required"`       // Target 是保存后的分组.
+}
+
+// OrderGroups 要求两个数组都存在, 非 nil 的空数组合法.
+type OrderGroups struct {
+	SortedChildren   []ChildRef `json:"sorted_children" binding:"required,dive"`   // SortedChildren 的位置决定阅读顺序.
+	UnsortedChildren []ChildRef `json:"unsorted_children" binding:"required,dive"` // UnsortedChildren 只表达成员集合.
+}
+
+// ChildRef 引用父文件夹的一个直接子节点.
+type ChildRef struct {
+	ID int64 `json:"id,string" binding:"gt=0"` // ID 是以十进制字符串传入的节点 ID.
+}</code></pre></details>
+<details><summary><small>新增完整文件</small>sys_error/catalogue_error.go</summary>
+<pre><code id="reorder-errors" data-path="sys_error/catalogue_error.go" data-mode="new">package sys_error
+
+import "errors"
+
+var (
+	// CatalogueOrderInvalidErr 表示排序请求自身不合法.
+	CatalogueOrderInvalidErr = errors.New("目录排序参数不合法")
+	// CatalogueNotFoundErr 表示请求引用的父目录已不存在.
+	CatalogueNotFoundErr = errors.New("所选目录不存在,请刷新目录树")
+	// CatalogueOrderChangedErr 表示数据库中的本层分组与 expected 不一致.
+	CatalogueOrderChangedErr = errors.New("目录状态已变化, 请刷新后确认排序")
+)</code></pre></details>
+<details><summary><small>追加到已有文件</small>resp_body/resp_body.go</summary>
+<pre><code id="reorder-body" data-path="resp_body/resp_body.go" data-mode="append">const (
+	// CatalogueNotFoundCode 表示父目录已不存在.
+	CatalogueNotFoundCode = 20301
+	// CatalogueOrderChangedCode 表示本层排序快照已失效.
+	CatalogueOrderChangedCode = 20302
+)
+
+// CatalogueNotFoundError 返回父目录不存在的统一响应.
+func (r *RespBody) CatalogueNotFoundError() {
+	r.failure(CatalogueNotFoundCode, sys_error.CatalogueNotFoundErr.Error())
+}
+
+// CatalogueOrderChangedError 提示前端刷新后重新核对目标顺序.
+func (r *RespBody) CatalogueOrderChangedError() {
+	r.failure(CatalogueOrderChangedCode, sys_error.CatalogueOrderChangedErr.Error())
+}</code></pre></details>
+<div class="table-wrap"><table><thead><tr><th scope="col">业务码</th><th scope="col">触发条件</th><th scope="col">页面处理</th></tr></thead><tbody>
+<tr><td><code>10101</code></td><td>请求格式错误、缺数组、ID 重复、列入父节点或两份成员集合不同。本方案也将存在的 file 用作父项归为参数错误。</td><td>修正请求。</td></tr>
+<tr><td><code>20202 / 20301</code></td><td>已定位的所属书籍不存在 / 父目录节点已不存在。</td><td>刷新书籍选项或重取目录树。</td></tr>
+<tr><td><code>20302</code></td><td>父节点归属在定位后发生变化，或锁定后的实际分组与 expected 不符。</td><td>重读树并让管理员核对最新分组。</td></tr>
+<tr><td><code>10201 / 500</code></td><td>数据库查询、加锁、写入或提交失败 / 内部调用异常。</td><td>失败后读取目录树，核实数据库中的实际状态。</td></tr>
+<tr><td><code>20003 / 20004</code></td><td>令牌过期 / 缺失、无效或已撤销。</td><td>沿用公共鉴权处理。</td></tr>
+</tbody></table></div>
+<details><summary><small>HTTP 200</small>快照冲突的完整响应</summary>
+<pre><code id="conflict-response">{
+  "code": 20302,
+  "message": "目录状态已变化, 请刷新后确认排序",
+  "data": {}
+}</code></pre></details>
+</section>
+<section id="biz"><h2>在锁内比较快照并生成变更计划</h2>
+<h3>业务方法接收完整请求</h3><p>先在 <code>biz/catalogue.go</code> 的 import 块加入 <code>fmt</code>，再把 <code>Reorder</code> 直接追加到 <code>Tree</code> 方法后。参数形状在控制器校验，请求分组的语义在业务层校验。提交成功后返回 <code>nil</code>，响应体由控制器构造。</p><details><summary><small>加入现有 import 块</small>biz/catalogue.go</summary>
+<pre><code id="biz-fmt" data-path="biz/catalogue.go" data-mode="import">"fmt"</code></pre></details>
+<details open><summary><small>追加到已有文件</small>biz/catalogue.go</summary>
+<pre><code id="biz-reorder" data-path="biz/catalogue.go" data-mode="append">// Reorder 校验编排请求, 使用锁定后的同级目录行比较快照并保存新顺序.
+func (c *Catalogue) Reorder(ctx context.Context, req *reqCatalogue.ReorderReq) error {
+	if c == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Catalogue.Reorder: nil receiver")}
+	}
+	if ctx == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Catalogue.Reorder: nil context")}
+	}
+	if req == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Catalogue.Reorder: nil request")}
+	}
+	plan, err := newReorderPlan(req.Catalogue)
+	if err != nil {
+		return err
+	}
+	orm := &amp;model.Catalogue{}
+	err = orm.ReorderChildren(ctx, req.Catalogue.ParentID, plan.changes)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, model.CatalogueNotFoundErr):
+		return sys_error.CatalogueNotFoundErr
+	case errors.Is(err, model.BookNotFoundErr):
+		return sys_error.BookNotFoundErr
+	case errors.Is(err, model.CatalogueParentNotFolderErr):
+		return fmt.Errorf("%w: parent_id must reference a folder", sys_error.CatalogueOrderInvalidErr)
+	case errors.Is(err, model.CatalogueOrderChangedErr), errors.Is(err, sys_error.CatalogueOrderChangedErr):
+		return sys_error.CatalogueOrderChangedErr
+	default:
+		return &amp;sys_error.DatabaseError{Cause: err}
+	}
+}</code></pre></details>
+<h3>先比请求内部，再比数据库</h3><div class="table-wrap"><table><thead><tr><th scope="col">比较对象</th><th scope="col">比较方法</th><th scope="col">不一致时</th></tr></thead><tbody>
+<tr><td><code>expected</code> 与 <code>target</code></td><td>每份分组内部两数组互斥且无重复，不含父 ID；合并后的两份 ID 集合必须完全相等。</td><td>请求自身不成立，返回 <code>10101</code>。</td></tr>
+<tr><td>锁定的直接子项与 <code>expected</code></td><td>已排项取当前 sort 升序的 ID 序列，待排项只比 ID 集合。忽略显隐、待排数组顺序和实际序号的间隔。</td><td>返回 <code>20302</code>，数据库的任何目录行均不应被改写。</td></tr>
+<tr><td>锁定的直接子项与 <code>target</code></td><td>以锁定时的状态决定最终状态；按目标数组下标加一重新连续编号。</td><td>只为实际变化的行安排更新。</td></tr>
+</tbody></table></div>
+<p>若快照与目标都漏掉了同一个数据库子项，两份请求的成员仍相等；与数据库比对时会得到 <code>20302</code>。若只有目标漏掉了该子项，两份请求已经自相矛盾，直接得到 <code>10101</code>。若已排节点原来的序号为 <code>2, 7</code>，且目标保留相同 ID 顺序，快照比对会通过，保存后序号归整为 <code>1, 2</code>。只有比对通过且最终序号、显隐均相同，才能跳过写入。</p><details><summary><small>新增完整文件</small>biz/catalogue_reorder.go</summary>
+<pre><code id="biz-plan" data-path="biz/catalogue_reorder.go" data-mode="new">package biz
+
+import (
+	"fmt"
+	"math"
+
+	"SolarNotesAdminAPI/enum"
+	"SolarNotesAdminAPI/model"
+	reqCatalogue "SolarNotesAdminAPI/param/req/v1/catalogue"
+	"SolarNotesAdminAPI/sys_error"
+)
+
+// siblingOrder 以 ID 查找请求中的位置. 0 仅在此内存索引中表示待排, 写库时转为 NULL.
+type siblingOrder map[int64]uint32
+
+// reorderPlan 保存已通过请求校验的原分组与目标分组.
+type reorderPlan struct {
+	expected siblingOrder // expected 保存打开抽屉时的相对位置.
+	target   siblingOrder // target 保存提交后的位置, 正数从 1 开始.
+}
+
+// newReorderPlan 在获取数据库锁之前验证两份分组使用相同的完整成员集合.
+func newReorderPlan(input *reqCatalogue.ReorderCatalogueReq) (*reorderPlan, error) {
+	if input == nil {
+		return nil, fmt.Errorf("%w: catalogue is required", sys_error.CatalogueOrderInvalidErr)
+	}
+	if input.ParentID &lt;= 0 {
+		return nil, fmt.Errorf("%w: parent_id must be positive", sys_error.CatalogueOrderInvalidErr)
+	}
+	expected, err := indexOrderGroups(input.ParentID, input.Expected, "expected")
+	if err != nil {
+		return nil, err
+	}
+	target, err := indexOrderGroups(input.ParentID, input.Target, "target")
+	if err != nil {
+		return nil, err
+	}
+	if len(expected) != len(target) {
+		return nil, fmt.Errorf("%w: expected and target have different child counts", sys_error.CatalogueOrderInvalidErr)
+	}
+	for id := range expected {
+		if _, exists := target[id]; !exists {
+			return nil, fmt.Errorf("%w: target is missing child %d", sys_error.CatalogueOrderInvalidErr, id)
+		}
+	}
+	return &amp;reorderPlan{expected: expected, target: target}, nil
+}
+
+// indexOrderGroups 将两组 ID 合并为同一个索引, 同组和跨组重复均可被识别.
+func indexOrderGroups(parentID int64, groups *reqCatalogue.OrderGroups, field string) (siblingOrder, error) {
+	if groups == nil {
+		return nil, fmt.Errorf("%w: %s is required", sys_error.CatalogueOrderInvalidErr, field)
+	}
+	if groups.SortedChildren == nil || groups.UnsortedChildren == nil {
+		return nil, fmt.Errorf("%w: %s must contain both arrays", sys_error.CatalogueOrderInvalidErr, field)
+	}
+	if uint64(len(groups.SortedChildren)) &gt; math.MaxUint32 {
+		return nil, fmt.Errorf("%w: %s exceeds the maximum sort value", sys_error.CatalogueOrderInvalidErr, field)
+	}
+	order := make(siblingOrder, len(groups.SortedChildren)+len(groups.UnsortedChildren))
+	for i, child := range groups.SortedChildren {
+		if err := order.add(parentID, child.ID, uint32(i)+1); err != nil {
+			return nil, fmt.Errorf("%s.sorted_children: %w", field, err)
+		}
+	}
+	for _, child := range groups.UnsortedChildren {
+		if err := order.add(parentID, child.ID, 0); err != nil {
+			return nil, fmt.Errorf("%s.unsorted_children: %w", field, err)
+		}
+	}
+	return order, nil
+}
+
+// add 只接受同一快照中首次出现的正数子节点 ID.
+func (o siblingOrder) add(parentID, id int64, position uint32) error {
+	if id &lt;= 0 || id == parentID {
+		return fmt.Errorf("%w: child ID %d must be positive and different from parent_id", sys_error.CatalogueOrderInvalidErr, id)
+	}
+	if _, exists := o[id]; exists {
+		return fmt.Errorf("%w: duplicate child ID %d", sys_error.CatalogueOrderInvalidErr, id)
+	}
+	o[id] = position
+	return nil
+}
+
+// matches 比对已排序列和待排集合. 输入行中非 NULL 项必须已经按 sort 升序排列.
+func (o siblingOrder) matches(rows []model.Catalogue) bool {
+	if len(o) != len(rows) {
+		return false
+	}
+	var rankedCount uint64
+	for _, row := range rows {
+		var position uint64
+		if row.Sort != nil {
+			rankedCount++
+			position = rankedCount
+		}
+		expectedPosition, exists := o[row.ID]
+		if !exists || uint64(expectedPosition) != position {
+			return false
+		}
+	}
+	return true
+}
+
+// changes 根据锁定行计算目标状态, 按 ID 返回排序或显隐有变更的直接子节点.
+func (p *reorderPlan) changes(rows []model.Catalogue) (map[int64]model.Catalogue, error) {
+	if !p.expected.matches(rows) {
+		return nil, sys_error.CatalogueOrderChangedErr
+	}
+	changes := make(map[int64]model.Catalogue)
+	for _, row := range rows {
+		target := row
+		if rank := p.target[row.ID]; rank &gt; 0 {
+			target.Sort = &amp;rank
+			if row.Sort == nil {
+				target.DisplayStatus = enum.DisplayVisible
+			}
+		} else {
+			target.Sort = nil
+			target.DisplayStatus = enum.DisplayHidden
+		}
+		if !equalCatalogueSort(row.Sort, target.Sort) || row.DisplayStatus != target.DisplayStatus {
+			changes[row.ID] = target
+		}
+	}
+	return changes, nil
+}
+
+// equalCatalogueSort 按数值比较排序位置, 两项均为 nil 表示均待排.
+func equalCatalogueSort(a, b *uint32) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}</code></pre></details>
+</section>
+<section id="transaction"><h2>锁定同一层，原子保存最终状态</h2>
+<p>业务层和 DAO 共用 <code>model.Catalogue</code>。事务锁定的行保存原状态，业务层按 ID 返回有变更的目录副本。DAO 对照原状态释放旧序号，再从副本中读取 <code>sort</code> 和 <code>display_status</code> 写入这两列。移回待排的节点在释放旧序号时已经写成 <code>NULL / hidden</code>，只需更新一次。</p>
+<ol><li><strong>定位。</strong> 用父目录 ID 查询所属书籍。这个普通读取只用于确定第一把锁的对象。</li><li><strong>复核。</strong> 在同一写事务内，先锁书籍，再按 ID 重新读取并锁定父目录，最后锁定该书该父目录下的全部直接子项。按 <code>book_id</code>、<code>parent_id</code> 限定范围。传入其他父目录或其他书籍的节点，都会在成员校验或事务内的快照比对阶段被拒绝。</li><li><strong>先释放、再分配。</strong> 保留锁定行原来的序号与显隐。释放发生变化且原先非空的旧序号，再写最终的 <code>1..N</code> 和显隐；移回待排的子项最终同时为 <code>NULL / hidden</code>。交换 1、2 时，即使有 <code>uk_book_parent_sort</code> 唯一索引也能完成。临时 NULL 符合 <code>chk_catalogue_sort_by_parent</code> 对非根子节点的约束。</li><li><strong>提交。</strong> 中间任何错误使整批回滚；只有提交成功才返回成功。所有写语句都携带本书、本父和子节点 ID 条件。</li></ol><p class="note">书籍行是同一本书目录写操作的共同锁。后续显隐、导入、删除或移动目录的实现也应遵循「书 → 父目录 → 子项」的顺序；这样能在一次排序事务中稳定地核对成员，并读取其他管理员刚提交的显隐修改。书级串行化涵盖同书的不同父目录，不同书籍可分别操作。</p><p><code>ReorderChildren</code> 开启事务后，通过父目录实例调用私有方法锁定子节点、释放旧序号并写入目标顺序。父目录实例的 <code>BookID</code> 和 <code>ID</code> 共同限定写入范围。</p><details><summary><small>合并后的完整文件</small>model/catalogue.go</summary>
+<pre><code id="model-reorder" data-path="model/catalogue.go" data-mode="replace">package model
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+
+	"SolarNotesAdminAPI/db"
+	"SolarNotesAdminAPI/enum"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+var (
+	// CatalogueNotFoundErr 表示父目录不存在或已删除.
+	CatalogueNotFoundErr = errors.New("catalogue not found")
+	// CatalogueParentNotFolderErr 表示请求指定的父节点是文件.
+	CatalogueParentNotFolderErr = errors.New("catalogue parent must be a folder")
+	// CatalogueOrderChangedErr 表示父目录归属或同级排序快照已变化.
+	CatalogueOrderChangedErr = errors.New("catalogue order changed")
+)
+
+// Catalogue 映射 catalogue 表
+type Catalogue struct {
+	ID            int64   `gorm:"column:id;primaryKey;autoIncrement:false"` // ID 目录节点主键
+	BookID        int64   `gorm:"column:book_id"`                           // BookID 所属书籍
+	ParentID      int64   `gorm:"column:parent_id"`                         // ParentID 直接父节点 ID, 根节点为 0
+	Name          string  `gorm:"column:name"`                              // Name 节点名称
+	Intro         string  `gorm:"column:intro"`                             // Intro 节点介绍
+	Type          string  `gorm:"column:type"`                              // Type 节点类型
+	Sort          *uint32 `gorm:"column:sort"`                              // Sort 节点排序(nil 表示待排序)
+	DisplayStatus string  `gorm:"column:display_status"`                    // DisplayStatus 节点显隐状态
+}
+
+// ReadBookTree 在同一个只读快照内,读取给定书籍和该书全部目录行
+func (c *Catalogue) ReadBookTree(ctx context.Context, bookID int64) (*Book, []Catalogue, error) {
+	if c == nil {
+		err := errors.New("model.Catalogue.ReadBookTree: nil receiver")
+		return nil, nil, err
+	}
+
+	if ctx == nil {
+		err := errors.New("model.Catalogue.ReadBookTree: nil context")
+		return nil, nil, err
+	}
+
+	if bookID &lt;= 0 {
+		err := errors.New("model.Catalogue.ReadBookTree: book ID must be positive")
+		return nil, nil, err
+	}
+
+	if db.DB == nil {
+		err := errors.New("model.Catalogue.ReadBookTree: database is not initialized")
+		return nil, nil, err
+	}
+
+	tx := db.DB.WithContext(ctx).Begin(&amp;sql.TxOptions{
+		Isolation: sql.LevelRepeatableRead,
+		ReadOnly:  true,
+	})
+	if tx.Error != nil {
+		return nil, nil, tx.Error
+	}
+	defer tx.Rollback()
+
+	var book Book
+	err := tx.Select("id", "title", "sort", "display_status").
+		Where("id = ?", bookID).Take(&amp;book).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, BookNotFoundErr
+		}
+
+		return nil, nil, err
+	}
+
+	var rows []Catalogue
+	err = tx.Model(&amp;Catalogue{}).
+		Select("id", "book_id", "parent_id", "name", "intro", "type", "sort", "display_status").
+		Where("book_id = ?", bookID).Find(&amp;rows).Error
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = tx.Commit().Error
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &amp;book, rows, nil
+}
+
+// ReorderChildren 锁定直接子节点, 由 plan 按 ID 返回有变更的目标状态, 再原子提交排序.
+func (c *Catalogue) ReorderChildren(ctx context.Context, parentID int64, plan func([]Catalogue) (map[int64]Catalogue, error)) error {
+	if c == nil {
+		return errors.New("model.Catalogue.ReorderChildren: nil receiver")
+	}
+	if ctx == nil {
+		return errors.New("model.Catalogue.ReorderChildren: nil context")
+	}
+	if parentID &lt;= 0 {
+		return errors.New("model.Catalogue.ReorderChildren: invalid parent ID")
+	}
+	if plan == nil {
+		return errors.New("model.Catalogue.ReorderChildren: nil plan")
+	}
+	if db.DB == nil {
+		return errors.New("database is not initialized")
+	}
+
+	conn := db.DB.WithContext(ctx)
+	var parent Catalogue
+	// 此次普通读只定位要锁的书. 所有决策都依据事务内的当前读.
+	err := conn.Select("id", "book_id").Where("id = ?", parentID).Take(&amp;parent).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return CatalogueNotFoundErr
+	}
+	if err != nil {
+		return err
+	}
+
+	tx := conn.Begin(&amp;sql.TxOptions{Isolation: sql.LevelRepeatableRead})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
+
+	rows, err := parent.lockChildren(tx)
+	if err != nil {
+		return err
+	}
+	changes, err := plan(rows)
+	if err != nil {
+		return err
+	}
+	err = parent.writeChildOrder(tx, rows, changes)
+	if err != nil {
+		return err
+	}
+	return tx.Commit().Error
+}
+
+// lockChildren 依次锁定书籍, 父节点和该书中它的全部直接子节点.
+func (c *Catalogue) lockChildren(tx *gorm.DB) ([]Catalogue, error) {
+	lock := clause.Locking{Strength: "UPDATE"}
+	var book Book
+	err := tx.Clauses(lock).Select("id").Where("id = ?", c.BookID).Take(&amp;book).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, BookNotFoundErr
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var parent Catalogue
+	err = tx.Clauses(lock).Select("id", "book_id", "type").
+		Where("id = ?", c.ID).Take(&amp;parent).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, CatalogueNotFoundErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	if parent.BookID != c.BookID {
+		return nil, CatalogueOrderChangedErr
+	}
+	if parent.Type != enum.TypeFolder {
+		return nil, CatalogueParentNotFolderErr
+	}
+
+	var rows []Catalogue
+	err = tx.Clauses(lock).Select("id", "book_id", "parent_id", "sort", "display_status").
+		Where("book_id = ? AND parent_id = ?", c.BookID, c.ID).
+		Order("sort ASC").Order("id ASC").Find(&amp;rows).Error
+	return rows, err
+}
+
+// writeChildOrder 先释放变更项占用的旧序号, 再分配最终序号, 避免同层唯一键冲突.
+func (c *Catalogue) writeChildOrder(tx *gorm.DB, rows []Catalogue, changes map[int64]Catalogue) error {
+	if len(changes) == 0 {
+		return nil
+	}
+	for _, row := range rows {
+		if _, changed := changes[row.ID]; !changed || row.Sort == nil {
+			continue
+		}
+		if err := c.updateChildOrder(tx, row.ID, nil, enum.DisplayHidden); err != nil {
+			return err
+		}
+	}
+	for _, row := range rows {
+		target, changed := changes[row.ID]
+		if !changed {
+			continue
+		}
+		if row.Sort != nil &amp;&amp; target.Sort == nil {
+			continue // 该项在释放旧号时已落到最终的 NULL 和 hidden.
+		}
+		if err := c.updateChildOrder(tx, row.ID, target.Sort, target.DisplayStatus); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// updateChildOrder 更新一行已锁定且实际变更的子节点, nil 会写入 SQL NULL.
+func (c *Catalogue) updateChildOrder(tx *gorm.DB, childID int64, rank *uint32, status string) error {
+	result := tx.Model(&amp;Catalogue{}).
+		Where("book_id = ? AND parent_id = ? AND id = ?", c.BookID, c.ID, childID).
+		Updates(map[string]any{"sort": rank, "display_status": status})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("catalogue %d order update affected %d rows", childID, result.RowsAffected)
+	}
+	return nil
+}</code></pre></details>
+<p>InnoDB 的 <code>FOR UPDATE</code> 会读取最新可锁定的记录并持锁至事务结束。MySQL 唯一索引允许可空列有多个 NULL，因此可以在一次事务内释放旧位次，再分配最终序号。<a href="https://dev.mysql.com/doc/refman/8.0/en/innodb-locking-reads.html">MySQL 锁定读取</a> · <a href="https://dev.mysql.com/doc/refman/8.0/en/create-index.html">MySQL 唯一索引</a></p></section>
+<section id="http"><h2>复用 JSON 绑定并注册路由</h2>
+<p>当前控制器已有 <code>bindTreeRequest</code>。将它替换为下面的 <code>bindCatalogueRequest</code>，让两个目录接口共用同一个 JSON 解码器逻辑。它接受一个完整 JSON 值和合法尾随空白，随后执行各自的 Gin 字段校验。下面三个控制器片段均使用该文件已有的导入。</p><details><summary><small>替换现有函数</small>controller/v1/catalogue/catalogue.go</summary>
+<pre><code id="bind-catalogue" data-path="controller/v1/catalogue/catalogue.go" data-mode="replace-bind">// bindCatalogueRequest 读取一个完整 JSON 对象, 然后校验目标请求的 binding 标签.
+func bindCatalogueRequest(c *gin.Context, req any) error {
+	decoder := json.NewDecoder(c.Request.Body)
+	if err := decoder.Decode(req); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&amp;struct{}{}); err != io.EOF {
+		return errors.New("request body must contain one JSON object")
+	}
+	return binding.Validator.ValidateStruct(req)
+}</code></pre></details>
+<p>在已有 <code>Tree()</code> 内仅替换调用绑定函数的 <code>if</code> 首行，原有错误处理块接在后面。</p><details><summary><small>替换原调用行</small>controller/v1/catalogue/catalogue.go</summary>
+<pre><code id="tree-binding-call" data-path="controller/v1/catalogue/catalogue.go" data-mode="replace-tree-call">if err := bindCatalogueRequest(c, req); err != nil {</code></pre></details>
+<details><summary><small>追加到已有文件</small>controller/v1/catalogue/catalogue.go</summary>
+<pre><code id="controller-reorder" data-path="controller/v1/catalogue/catalogue.go" data-mode="append">// Reorder 保存一个文件夹直接子项的阅读顺序和相应的显隐状态.
+func Reorder(c *gin.Context) {
+	req := &amp;reqCatalogue.ReorderReq{}
+	body := &amp;resp_body.RespBody{}
+	if err := bindCatalogueRequest(c, req); err != nil {
+		body.ValidateError(err)
+		c.JSON(http.StatusOK, body)
+		return
+	}
+
+	catalogue := &amp;biz.Catalogue{}
+	if err := catalogue.Reorder(c.Request.Context(), req); err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, sys_error.CatalogueOrderInvalidErr):
+			body.ValidateError(err)
+		case errors.Is(err, sys_error.CatalogueNotFoundErr):
+			body.CatalogueNotFoundError()
+		case errors.Is(err, sys_error.CatalogueOrderChangedErr):
+			body.CatalogueOrderChangedError()
+		case errors.Is(err, sys_error.BookNotFoundErr):
+			body.BookNotFoundError()
+		case errors.As(err, &amp;dbErr):
+			body.DBError(dbErr)
+		default:
+			body.InternalError(err)
+		}
+		c.JSON(http.StatusOK, body)
+		return
+	}
+
+	body.Success(map[string]any{})
+	c.JSON(http.StatusOK, body)
+}</code></pre></details>
+<p>在 <code>main.go</code> 的 <code>newRouter</code> 中，将下列路由放在已有的 <code>v1.POST("/catalogue/tree", catalogue.Tree)</code> 下一行。继续由全局管理员中间件鉴权，请求体大小受现有全局配置约束。</p><details><summary><small>追加到 v1 路由组</small>main.go</summary>
+<pre><code id="route-reorder" data-path="main.go" data-mode="route">v1.POST("/catalogue/reorder", catalogue.Reorder)</code></pre></details>
+</section>
+<section id="verify"><h2>联调与并发验收</h2>
+<p>在可写的隔离测试库准备两个文件夹或两本书，至少准备一个待排节点和两个已排节点。用 <code>/v1/catalogue/tree</code> 取测试父目录完整的 <code>children</code>，在 Postman 中选择 Bearer Token、raw / JSON。每次检查响应后再重读目录树，同时比对书籍、父目录和另一层子项。</p><div class="table-wrap"><table><thead><tr><th scope="col">操作</th><th scope="col">应观察到的结果</th></tr></thead><tbody>
+<tr><td>首次将两个待排项加入，随后互换两个已排项</td><td>两次均成功；顺序变为目标序列，序号连续且没有唯一键冲突。</td></tr>
+<tr><td>将全部已排项移回待排；再加入其中一项</td><td>先全部 <code>null / hidden</code>，重新加入的项为 <code>1 / visible</code>。空文件夹的两份分组均显式传空数组可成功。</td></tr>
+<tr><td>节点已排序且手动隐藏；在抽屉中移出又加回，或只调换它的位置</td><td>新序号正确，仍为 <code>hidden</code>。更深层子项和书籍显隐均保持各自原值。</td></tr>
+<tr><td>仅改变 expected 或 target 中待排 ID 的顺序</td><td>待排按集合理解，保存成功；若最终状态已经吻合，整次操作可以没有 UPDATE。</td></tr>
+<tr><td>排序快照中重复、跨数组重复、包含父节点、target 少一项、数字型 ID、缺数组或 null</td><td><code>10101</code>，整批无写入。</td></tr>
+<tr><td>用合法的父 ID，快照中含同书其他父项的孩子、别书孩子，或者两份分组均漏列一个现有孩子</td><td><code>20302</code>；实际层及其他层全部保持原状。</td></tr>
+<tr><td>父 ID 指向文件、已删除的父项；移除令牌</td><td>分别返回 <code>10101</code>、<code>20301</code>、<code>20004</code>。</td></tr>
+<tr><td>甲、乙携带同一快照保存不同目标，甲先实际改变顺序或分组并提交</td><td>乙获取书锁后读到甲的结果，返回 <code>20302</code>。若甲仅改变显隐，乙仍可提交，并保留持续已排节点的最新显隐。</td></tr>
+<tr><td>在隔离库中让第二阶段的某次写入失败</td><td>整个事务回滚，原有序号、显隐、其他层数据均保持调用前状态。</td></tr>
+</tbody></table></div>
+<p>若响应超时或丢失，客户端先重读树；按已排序列、待排集合比较当前分组与原 <code>target</code>。若已达成目标即可结束；否则让管理员基于最新分组确认，以新的 <code>expected</code> 再次提交。原快照已经失效时，即使重发相同请求也可能收到 <code>20302</code>。</p>
+<p><strong>示例验证。</strong> 将本页 Go 代码应用到当前工程的独立副本后，通过了 Gin 路由测试。在单独初始化的 MySQL 8.4.13 / InnoDB 中，两个使用同一快照的并发保存分别返回 <code>200</code> 和 <code>20302</code>；强制第二阶段写入失败后，所有子项都恢复为保存前的序号和显隐。</p></section>
+</main></div>
+<script>
+  const controls = document.querySelector('.tools');
+  controls.hidden = false;
+  controls.addEventListener('click', (event) => {
+    const choice = event.target.dataset.open;
+    if (choice === undefined) return;
+    for (const panel of document.querySelectorAll('main details')) panel.open = choice === 'true';
+  });
+  for (const block of document.querySelectorAll('details pre code')) {
+    const toolbar = document.createElement('div');
+    toolbar.className = 'copy';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = '复制代码';
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(block.textContent);
+        button.textContent = '已复制';
+      } catch {
+        const range = document.createRange();
+        range.selectNodeContents(block);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        button.textContent = '已选中，请手动复制';
+      }
+    });
+    toolbar.append(button);
+    block.closest('details').append(toolbar);
+  }
+</script>
+</body></html>

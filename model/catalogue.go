@@ -4,10 +4,22 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"SolarNotesAdminAPI/db"
+	"SolarNotesAdminAPI/enum"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+var (
+	// CatalogueNotFoundErr 表示父目录不存在或已删除.
+	CatalogueNotFoundErr = errors.New("catalogue not found")
+	// CatalogueParentNotFolderErr 表示请求指定的父节点是文件.
+	CatalogueParentNotFolderErr = errors.New("catalogue parent must be a folder")
+	// CatalogueOrderChangedErr 表示父目录归属或同级排序快照已变化.
+	CatalogueOrderChangedErr = errors.New("catalogue order changed")
 )
 
 // Catalogue 映射 catalogue 表
@@ -78,4 +90,131 @@ func (c *Catalogue) ReadBookTree(ctx context.Context, bookID int64) (*Book, []Ca
 	}
 
 	return &book, rows, nil
+}
+
+// ReorderChildren 锁定直接子节点, 由 plan 按 ID 返回有变更的目标状态, 再原子提交排序.
+func (c *Catalogue) ReorderChildren(ctx context.Context, parentID int64, plan func([]Catalogue) (map[int64]Catalogue, error)) error {
+	if c == nil {
+		return errors.New("model.Catalogue.ReorderChildren: nil receiver")
+	}
+	if ctx == nil {
+		return errors.New("model.Catalogue.ReorderChildren: nil context")
+	}
+	if parentID <= 0 {
+		return errors.New("model.Catalogue.ReorderChildren: invalid parent ID")
+	}
+	if plan == nil {
+		return errors.New("model.Catalogue.ReorderChildren: nil plan")
+	}
+	if db.DB == nil {
+		return errors.New("database is not initialized")
+	}
+
+	conn := db.DB.WithContext(ctx)
+	var parent Catalogue
+	// 此次普通读只定位要锁的书. 所有决策都依据事务内的当前读.
+	err := conn.Select("id", "book_id").Where("id = ?", parentID).Take(&parent).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return CatalogueNotFoundErr
+	}
+	if err != nil {
+		return err
+	}
+
+	tx := conn.Begin(&sql.TxOptions{Isolation: sql.LevelRepeatableRead})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
+
+	rows, err := parent.lockChildren(tx)
+	if err != nil {
+		return err
+	}
+	changes, err := plan(rows)
+	if err != nil {
+		return err
+	}
+	err = parent.writeChildOrder(tx, rows, changes)
+	if err != nil {
+		return err
+	}
+	return tx.Commit().Error
+}
+
+// lockChildren 依次锁定书籍, 父节点和该书中它的全部直接子节点.
+func (c *Catalogue) lockChildren(tx *gorm.DB) ([]Catalogue, error) {
+	lock := clause.Locking{Strength: "UPDATE"}
+	var book Book
+	err := tx.Clauses(lock).Select("id").Where("id = ?", c.BookID).Take(&book).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, BookNotFoundErr
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var parent Catalogue
+	err = tx.Clauses(lock).Select("id", "book_id", "type").
+		Where("id = ?", c.ID).Take(&parent).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, CatalogueNotFoundErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	if parent.BookID != c.BookID {
+		return nil, CatalogueOrderChangedErr
+	}
+	if parent.Type != enum.TypeFolder {
+		return nil, CatalogueParentNotFolderErr
+	}
+
+	var rows []Catalogue
+	err = tx.Clauses(lock).Select("id", "book_id", "parent_id", "sort", "display_status").
+		Where("book_id = ? AND parent_id = ?", c.BookID, c.ID).
+		Order("sort ASC").Order("id ASC").Find(&rows).Error
+	return rows, err
+}
+
+// writeChildOrder 先释放变更项占用的旧序号, 再分配最终序号, 避免同层唯一键冲突.
+func (c *Catalogue) writeChildOrder(tx *gorm.DB, rows []Catalogue, changes map[int64]Catalogue) error {
+	if len(changes) == 0 {
+		return nil
+	}
+	for _, row := range rows {
+		if _, changed := changes[row.ID]; !changed || row.Sort == nil {
+			continue
+		}
+		if err := c.updateChildOrder(tx, row.ID, nil, enum.DisplayHidden); err != nil {
+			return err
+		}
+	}
+	for _, row := range rows {
+		target, changed := changes[row.ID]
+		if !changed {
+			continue
+		}
+		if row.Sort != nil && target.Sort == nil {
+			continue // 该项在释放旧号时已落到最终的 NULL 和 hidden.
+		}
+		if err := c.updateChildOrder(tx, row.ID, target.Sort, target.DisplayStatus); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// updateChildOrder 更新一行已锁定且实际变更的子节点, nil 会写入 SQL NULL.
+func (c *Catalogue) updateChildOrder(tx *gorm.DB, childID int64, rank *uint32, status string) error {
+	result := tx.Model(&Catalogue{}).
+		Where("book_id = ? AND parent_id = ? AND id = ?", c.BookID, c.ID, childID).
+		Updates(map[string]any{"sort": rank, "display_status": status})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("catalogue %d order update affected %d rows", childID, result.RowsAffected)
+	}
+	return nil
 }

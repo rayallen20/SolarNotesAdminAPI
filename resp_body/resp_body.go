@@ -122,3 +122,20 @@ func (r *RespBody) BookSortOccupiedError() {
 func (r *RespBody) BookNotFoundError() {
 	r.failure(BookNotFoundCode, sys_error.BookNotFoundErr.Error())
 }
+
+const (
+	// CatalogueNotFoundCode 表示父目录已不存在.
+	CatalogueNotFoundCode = 20301
+	// CatalogueOrderChangedCode 表示本层排序快照已失效.
+	CatalogueOrderChangedCode = 20302
+)
+
+// CatalogueNotFoundError 返回父目录不存在的统一响应.
+func (r *RespBody) CatalogueNotFoundError() {
+	r.failure(CatalogueNotFoundCode, sys_error.CatalogueNotFoundErr.Error())
+}
+
+// CatalogueOrderChangedError 提示前端刷新后重新核对目标顺序.
+func (r *RespBody) CatalogueOrderChangedError() {
+	r.failure(CatalogueOrderChangedCode, sys_error.CatalogueOrderChangedErr.Error())
+}
