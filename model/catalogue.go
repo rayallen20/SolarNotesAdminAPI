@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 
 	"SolarNotesAdminAPI/db"
 	"SolarNotesAdminAPI/enum"
@@ -199,17 +200,17 @@ func (c *Catalogue) writeChildOrder(tx *gorm.DB, rows []Catalogue, changes map[i
 		if !changed {
 			continue
 		}
-		if row.Sort != nil && target.Sort == nil {
-			// 该节点已在释放旧序号时写为 NULL / hidden, 按锁定时的状态决定是否隐藏后代.
-			if row.DisplayStatus == enum.DisplayVisible {
-				if err := row.hideDescendants(tx); err != nil {
-					return err
-				}
+		// 从已排移回待排的节点在释放旧序号时已写入最终值.
+		movedToUnsorted := row.Sort != nil && target.Sort == nil
+		if !movedToUnsorted {
+			if err := c.updateChildOrder(tx, row.ID, target.Sort, target.DisplayStatus); err != nil {
+				return err
 			}
-			continue
 		}
-		if err := c.updateChildOrder(tx, row.ID, target.Sort, target.DisplayStatus); err != nil {
-			return err
+		if row.DisplayStatus == enum.DisplayVisible && target.DisplayStatus == enum.DisplayHidden {
+			if err := row.hideDescendants(tx); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -310,13 +311,14 @@ func (c *Catalogue) SetDisplayStatus(ctx context.Context, check func(Catalogue, 
 
 // hideDescendants 使用调用方的事务逐批隐藏同书后代. 接收者是已锁定的目标行.
 func (c *Catalogue) hideDescendants(tx *gorm.DB) error {
-	const batchSize = 256
+	const parentBatchSize = 256
+	const childBatchSize = 128
 	pending := []int64{c.ID}
 	seen := map[int64]struct{}{c.ID: {}}
 	lock := clause.Locking{Strength: "UPDATE"}
 
 	for len(pending) > 0 {
-		count := min(len(pending), batchSize)
+		count := min(len(pending), parentBatchSize)
 		parentIDs := pending[:count]
 		pending = pending[count:]
 
@@ -338,13 +340,15 @@ func (c *Catalogue) hideDescendants(tx *gorm.DB) error {
 			seen[id] = struct{}{}
 		}
 
-		// 本批子节点可能都已隐藏, 更新零行也成功.
-		err = tx.Model(&Catalogue{}).
-			Where("book_id = ? AND parent_id IN ?", c.BookID, parentIDs).
-			Where("display_status <> ?", enum.DisplayHidden).
-			UpdateColumn("display_status", enum.DisplayHidden).Error
-		if err != nil {
-			return err
+		// 按已锁定的子节点主键分批更新, 避免按父目录范围重新扫描并锁住其他书的记录.
+		for ids := range slices.Chunk(childIDs, childBatchSize) {
+			err = tx.Exec(`UPDATE catalogue FORCE INDEX (PRIMARY)
+				SET display_status = ?
+				WHERE book_id = ? AND id IN ? AND display_status <> ?`,
+				enum.DisplayHidden, c.BookID, ids, enum.DisplayHidden).Error
+			if err != nil {
+				return err
+			}
 		}
 		pending = append(pending, childIDs...)
 	}
