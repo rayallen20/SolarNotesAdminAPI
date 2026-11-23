@@ -2,7 +2,7 @@
 <html lang="zh-CN"><head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Solar Notes 管理后台目录树读取接口的业务设计、完整 Go 示例和验收场景。">
-  <title>读取一本书的完整目录树 · Solar Notes</title>
+  <title>读取一本书的管理目录树 · Solar Notes</title>
   <style>
     :root {
       color-scheme: light;
@@ -62,8 +62,8 @@
 <body><div class="page"><aside><div class="project">Solar Notes · 管理 API</div>
 <nav aria-label="本文目录"><a href="#contract">请求与响应</a><a href="#database">实际数据</a><a href="#design">业务层设计</a><a href="#dto">请求与响应类型</a><a href="#model">数据库快照</a><a href="#assembly">组树与排序</a><a href="#controller">控制器与路由</a><a href="#verify">联调验收</a></nav></aside>
 <main><header><div class="endpoint">POST /v1/catalogue/tree</div>
-<h1>读取一本书的完整目录树</h1>
-<p>管理员从书籍下拉框选中一本书后，接口一次返回书籍摘要和整棵目录树。前端可用同一份结果展开目录、展示直接子项、计算全书编排进度。</p>
+<h1>读取一本书的管理目录树</h1>
+<p>管理员选中书籍后，接口返回书籍摘要和管理目录树。任意层级中，类型为 <code>folder</code> 且名称精确等于小写 <code>img</code> 的节点及其全部后代都会被省略。名为 <code>img</code> 的文件和名为 <code>IMG</code> 的文件夹仍按原顺序返回。</p>
 <p><a href="../../SolarNotesAdmin/doc/catalogue-api-design.html#tree">前端接口设计 · 第 ③ 项</a> · <a href="../../SolarNotesAdmin/doc/catalogue-management-prototype.html#catalogue-panels">目录管理原型</a> · <a href="book-options-api-implementation.html#contract">上一步的书籍选项接口</a></p>
 <div class="tools" hidden><button type="button" data-open="true">展开全部示例</button><button type="button" data-open="false">收起全部示例</button></div>
 </header><section id="contract"><h2>请求与响应</h2>
@@ -117,16 +117,16 @@
   }
 }</code></pre></details>
 <div class="table-wrap"><table><thead><tr><th scope="col">书籍及目录状态</th><th scope="col">业务码</th><th scope="col">data 的形状</th></tr></thead><tbody>
-<tr><td>书籍存在，已导入目录</td><td><code>200</code></td><td><code>book.catalogues</code> 恰有一个根节点；根的 <code>parent_id</code> 为 <code>"0"</code>、<code>sort</code> 为 <code>0</code>。</td></tr>
-<tr><td>书籍存在，尚未导入</td><td><code>200</code></td><td><code>book</code> 的四个摘要字段照常返回，<code>catalogues: []</code>。</td></tr>
+<tr><td>书籍存在，已导入目录，根目录名称不是 <code>img</code></td><td><code>200</code></td><td><code>book.catalogues</code> 恰有一个根节点；根的 <code>parent_id</code> 为 <code>"0"</code>、<code>sort</code> 为 <code>0</code>。</td></tr>
+<tr><td>书籍存在，尚未导入或根文件夹名为 <code>img</code></td><td><code>200</code></td><td><code>book</code> 的四个摘要字段照常返回，<code>catalogues: []</code>。</td></tr>
 <tr><td>所选书籍已删除</td><td><code>20202</code></td><td><code>{}</code>。前端重新读取当前天体的书籍选项。</td></tr>
 </tbody></table></div>
-<p>文件和空文件夹都返回 <code>children: []</code>，前端依 <code>type</code> 区分。待排序节点必须保留 <code>"sort": null</code>。点击文件预览时使用目录节点的 <code>id</code>；本接口的响应只包含元数据。</p></section>
+<p>文件、空文件夹以及直接子项全部被过滤的文件夹都返回 <code>children: []</code>。保留节点的 ID、父子关系、序号和显隐状态照常返回。排序抽屉用该父节点返回的全部直接子项构造快照。<a href="catalogue-reorder-api-implementation.html#contract">同级排序的请求范围</a>。待排序节点必须保留 <code>"sort": null</code>。点击文件预览时使用目录节点的 <code>id</code>；本接口的响应只包含元数据。</p></section>
 <section id="database"><h2>用现有数据核对模型</h2>
 <p>此前对 <code>solar_notes</code> 只读核对时，书籍《MySQL是怎样运行的》的 ID 为 <code>2123435620763176960</code>，状态为 <code>visible</code>，书籍排序为 <code>1</code>。</p><div class="table-wrap"><table><thead><tr><th scope="col">数据库事实</th><th scope="col">对实现的影响</th></tr></thead><tbody>
 <tr><td><code>book.sort</code> 是 <code>INT UNSIGNED NOT NULL</code>；<code>catalogue.sort</code> 是 <code>INT UNSIGNED DEFAULT NULL</code>。</td><td>书籍排序使用 <code>uint32</code>；目录模型、业务实体和节点响应 DTO 均使用 <code>*uint32</code>。根指向 0，已排序子节点的范围为 1 至 4294967295，待排序子节点为 nil。</td></tr>
 <tr><td>根目录 ID 为 <code>2123684178040987648</code>，<code>parent_id = 0</code>，<code>type = folder</code>。</td><td>数据库用整数 0 标识根，序列化后 <code>parent_id</code> 是字符串 <code>"0"</code>。</td></tr>
-<tr><td>全书 59 个节点：1 个可见根文件夹、20 个隐藏子文件夹、38 个隐藏文件。58 个非根节点均待排序，其中有 2 个空文件夹。</td><td>遍历响应应得到 59 个节点。当前样本的编排进度为 <code>0 / 58</code>，前端只统计非根节点。</td></tr>
+<tr><td>全书 59 个节点：1 个可见根文件夹、20 个隐藏子文件夹、38 个隐藏文件。58 个非根节点均待排序，其中有 2 个空文件夹。</td><td>59 是当时的数据库行数。前端按响应中实际返回的非根节点统计编排进度，省略的 <code>img</code> 分支不计入分母。</td></tr>
 <tr><td>文件节点名称实际包含 <code>0. 大致过程.md</code>。<code>article.catalogue_id</code> 上有唯一索引。</td><td>原样返回 <code>catalogue.name</code>。文件类型取自 <code>catalogue.type</code>，无需拼接扩展名或联查 <code>article.path</code>。</td></tr>
 <tr><td>已生效的 <code>chk_catalogue_sort_by_parent</code> 检查父节点与排序值。</td><td>根节点的排序值必须为 0；非根节点允许 NULL 或正数。组树时仍校验待排序节点的显隐和根节点类型，这两个条件由业务层负责。</td></tr>
 <tr><td>现有唯一索引为 <code>uk_book_parent_sort(book_id, parent_id, sort)</code>，表使用 InnoDB。</td><td>按书籍查目录可使用索引左前缀。多条待排记录可共存；父节点属于同一本书、树无环等关系仍须在组装时确认。</td></tr>
@@ -136,11 +136,11 @@
 <p>将 <a href="../model/catalogue.go">model.Catalogue.Sort</a>、<a href="../biz/catalogue.go">biz.Catalogue.Sort</a> 和 <a href="../param/resp/v1/catalogue/tree.go">TreeNodeResp.Sort</a> 统一声明为 <code>*uint32</code>。原模型的有符号 32 位整数在读取 <code>2147483648</code> 起的值时会报错。指针保留数据库 NULL；响应标签继续使用 <code>json:"sort"</code>，这样待排序节点会显式返回 <code>"sort": null</code>。</p>
 <p>目录树请求只接收 <code>book.id</code>；成功响应仍用 JSON 数字传送排序值，JavaScript 的 <code>number</code> 可以精确表示全部 uint32 值。书籍摘要中的 <code>TreeBookResp.Sort</code> 对应另一个非空列，继续使用 <code>uint32</code>。</p></section>
 <section id="design"><h2>业务层的入口和返回值</h2>
-<div class="flow"><p><strong>建议入口</strong>　<code>(*biz.Catalogue).Tree(ctx, req) (*biz.Book, []*biz.Catalogue, error)</code></p><p><strong>调用顺序</strong>　控制器绑定请求 → 模型读取书籍和目录行 → 业务层挂接、校验、排序 → 控制器转换响应 DTO。</p></div><p><code>biz.Book</code> 和 <code>biz.Catalogue</code> 是独立的业务实体。一次成功调用返回书籍摘要和该书的根节点切片。即使目录行数为零，第一个返回值仍是查询到的书籍，第二个是空切片。若书籍不存在，则两个数据返回值均为 nil，同时返回书籍不存在错误。</p><p>数据库层用 <code>catalogue.book_id</code> 确定归属，业务节点只保存 <code>Parent</code> 和 <code>Children</code> 两种节点间关系。根的 <code>Parent == nil</code>，每个子节点的 <code>Parent</code> 都指向其直接父节点。书籍摘要直接从本次快照映射。已有 <code>biz.Book.fillByORM</code> 面向同时加载天体的记录，读树只需要书籍自身的四个字段。<code>biz</code> 处理树的有效性和顺序；控制器负责把数值 ID 转成字符串、构造响应对象并调用 <code>RespBody.Success</code>。</p><div class="table-wrap"><table><thead><tr><th scope="col">实现文件</th><th scope="col">职责</th></tr></thead><tbody>
+<div class="flow"><p><strong>建议入口</strong>　<code>(*biz.Catalogue).Tree(ctx, req) (*biz.Book, []*biz.Catalogue, error)</code></p><p><strong>调用顺序</strong>　控制器绑定请求 → 模型读取书籍和目录行 → 业务层挂接、校验、排序并过滤 img 分支 → 控制器转换响应 DTO。</p></div><p><code>biz.Book</code> 和 <code>biz.Catalogue</code> 是独立的业务实体。一次成功调用返回书籍摘要和该书的根节点切片。即使目录行数为零，第一个返回值仍是查询到的书籍，第二个是空切片。若书籍不存在，则两个数据返回值均为 nil，同时返回书籍不存在错误。</p><p>数据库层用 <code>catalogue.book_id</code> 确定归属，业务节点只保存 <code>Parent</code> 和 <code>Children</code> 两种节点间关系。根的 <code>Parent == nil</code>，每个子节点的 <code>Parent</code> 都指向其直接父节点。书籍摘要直接从本次快照映射。已有 <code>biz.Book.fillByORM</code> 面向同时加载天体的记录，读树只需要书籍自身的四个字段。<code>biz</code> 处理树的有效性和顺序；控制器负责把数值 ID 转成字符串、构造响应对象并调用 <code>RespBody.Success</code>。</p><div class="table-wrap"><table><thead><tr><th scope="col">实现文件</th><th scope="col">职责</th></tr></thead><tbody>
 <tr><td><code>model/catalogue.go</code></td><td>定义数据库行并执行两次查询。</td></tr>
 <tr><td><a href="../biz/catalogue.go">biz/catalogue.go</a></td><td>定义目录业务实体 <code>Catalogue</code> 及其 <code>Tree</code> 方法。该方法返回书籍摘要和目录根列表，并映射业务错误。</td></tr>
 <tr><td><a href="../enum/enum.go">enum/enum.go</a></td><td>复用节点类型与显隐状态常量。<code>TypeFolder</code> 表示文件夹，可包含零个子项；<code>TypeFile</code> 表示文件。</td></tr>
-<tr><td><code>biz/catalogue_node.go</code></td><td>从目录行填充现有节点，校验数据并建立父子双向关系。</td></tr>
+<tr><td><code>biz/catalogue_node.go</code></td><td>从全部目录行构建树，校验可达性；返回各层排除 <code>img</code> 文件夹后的子项。</td></tr>
 <tr><td><code>biz/catalogue_order.go</code></td><td>集中定义同一父节点下的排序规则。</td></tr>
 <tr><td><code>controller/v1/catalogue/catalogue.go</code></td><td>读取请求，递归生成 DTO，并写入统一响应。</td></tr>
 </tbody></table></div>
@@ -178,7 +178,7 @@ type TreeNodeResp struct {
 	Type          string          `json:"type"`           // Type 为 folder 或 file.
 	Sort          *uint32         `json:"sort"`           // Sort 为 nil 时编码为 JSON null.
 	DisplayStatus string          `json:"display_status"` // DisplayStatus 是节点自身的状态.
-	Children      []*TreeNodeResp `json:"children"`       // Children 是全部直接子项, 无子项时为 [].
+	Children      []*TreeNodeResp `json:"children"`       // Children 保存参与管理展示的直接子项, 无子项时为 [].
 }</code></pre></details>
 </section>
 <section id="model"><h2>在同一快照读取书籍与目录行</h2>
@@ -266,7 +266,7 @@ func (c *Catalogue) ReadBookTree(ctx context.Context, bookID int64) (*Book, []Ca
 	reqCatalogue "SolarNotesAdminAPI/param/req/v1/catalogue"
 	"SolarNotesAdminAPI/sys_error"
 )</code></pre></details>
-<p>四个空值判断分别标明接收者、上下文、请求和书籍引用。读库失败由 <code>DatabaseError</code> 包装；有书且数据关系不满足树契约时，建议返回 <code>InternalError</code>。前端收到完整树或明确错误，避免在缺失部分节点的目录上编排。</p>
+<p>四个空值判断分别标明接收者、上下文、请求和书籍引用。读库失败由 <code>DatabaseError</code> 包装；有书且数据关系不满足树契约时，建议返回 <code>InternalError</code>。过滤前的整本书数据仍参与校验。数据异常时返回内部错误，前端可据此停止编排。</p>
 <details open><summary><small>追加接收者方法</small>biz/catalogue.go</summary>
 <pre><code id="biz-entry" data-path="biz/catalogue.go" data-mode="append">// Tree 根据请求读取一本书的当前状态并组装完整的管理目录.
 func (c *Catalogue) Tree(ctx context.Context, req *reqCatalogue.TreeReq) (*Book, []*Catalogue, error) {
@@ -303,11 +303,12 @@ func (c *Catalogue) Tree(ctx context.Context, req *reqCatalogue.TreeReq) (*Book,
 	}
 	return summary, roots, nil
 }</code></pre></details>
-<h3>两遍挂接，再核对可达节点数</h3><p>第一遍按 ID 建立索引并定位根；第二遍根据行中的 <code>ParentID</code> 找到直接父文件夹，把 <code>child.Parent</code> 指向父节点，同时向 <code>parent.Children</code> 追加同一个子节点指针。即使输入中子行早于父行也能正确组装。随后从根遍历，每个非根节点只有一个父项；若遍历数量小于原始行数，说明有与根不连通的环形分支。非空数据要求一个 <code>folder</code> 根。根允许显隐切换，非根的已排项可隐藏，待排项只能隐藏。</p><details><summary><small>新增文件</small>biz/catalogue_node.go</summary>
+<h3>两遍挂接，再核对可达节点数</h3><p>第一遍按 ID 建立索引并定位根；第二遍根据行中的 <code>ParentID</code> 找到直接父文件夹，把 <code>child.Parent</code> 指向父节点，同时向 <code>parent.Children</code> 追加同一个子节点指针。即使输入中子行早于父行也能正确组装。随后从根遍历，每个非根节点只有一个父项；若遍历数量小于原始行数，说明有与根不连通的环形分支。完整数据仍须通过校验，包括将被省略的 <code>img</code> 分支；孤儿、环等异常仍按现有规则报错。非空数据要求一个 <code>folder</code> 根。根允许显隐切换，非根的已排项可隐藏，待排项只能隐藏。</p><details><summary><small>新增文件</small>biz/catalogue_node.go</summary>
 <pre><code id="biz-node" data-path="biz/catalogue_node.go" data-mode="new">package biz
 
 import (
 	"fmt"
+	"slices"
 
 	"SolarNotesAdminAPI/enum"
 	"SolarNotesAdminAPI/model"
@@ -316,7 +317,12 @@ import (
 	"golang.org/x/text/language"
 )
 
-// buildCatalogueTree 将单本书的平面记录挂接为双向树, 空书返回空数组.
+// isCatalogueImageFolder 判断节点是否为目录树和同级排序中省略的 img 文件夹.
+func isCatalogueImageFolder(nodeType, name string) bool {
+	return nodeType == enum.TypeFolder &amp;&amp; name == "img"
+}
+
+// buildCatalogueTree 校验整本书的目录, 返回去掉 img 文件夹分支的双向树.
 func buildCatalogueTree(bookID int64, rows []model.Catalogue) ([]*Catalogue, error) {
 	if len(rows) == 0 {
 		return []*Catalogue{}, nil
@@ -379,10 +385,17 @@ func buildCatalogueTree(bookID int64, rows []model.Catalogue) ([]*Catalogue, err
 		if err := order.sortChildren(node); err != nil {
 			return nil, err
 		}
+		// 先将所有子节点入队, 被过滤的分支也要参与完整性校验.
 		queue = append(queue, node.Children...)
+		node.Children = slices.DeleteFunc(node.Children, func(child *Catalogue) bool {
+			return isCatalogueImageFolder(child.Type, child.Name)
+		})
 	}
 	if len(queue) != len(rows) {
 		return nil, fmt.Errorf("cycle outside the root of book %d", bookID)
+	}
+	if isCatalogueImageFolder(root.Type, root.Name) {
+		return []*Catalogue{}, nil
 	}
 	return []*Catalogue{root}, nil
 }
@@ -568,11 +581,13 @@ func treeNodeResponses(nodes []*biz.Catalogue) []*respCatalogue.TreeNodeResp {
 </section>
 <section id="verify"><h2>Postman 与业务层验收</h2>
 <p>Postman 使用 <code>POST {{base_url}}/v1/catalogue/tree</code>，选择 Bearer Token 和 raw / JSON。先用天体与书籍选项接口找到可用 ID。真实样本适合验证全量与空文件夹；排序混合、坏数据和删除等分支可用独立测试数据或组树函数的内存输入验证。</p><div class="table-wrap"><table><thead><tr><th scope="col">输入或条件</th><th scope="col">预期结果</th></tr></thead><tbody>
-<tr><td>实际示例书籍 ID</td><td>返回 <code>200</code>。若数据仍与上方快照一致，所有 <code>children</code> 递归合计加根为 59；根为 <code>"2123684178040987648"</code>，空文件夹仍是 <code>folder</code>。</td></tr>
+<tr><td>实际示例书籍 ID</td><td>返回 <code>200</code>。逐层对照该书的管理目录；从数据库节点总数中扣除各个 <code>img</code> 分支后，数量应与响应相同，嵌套分支只扣一次。</td></tr>
 <tr><td>同一批测试数据包含两本书，其中目标书隐藏</td><td>仅出现目标书的目录；书籍、根和子节点各自的 <code>display_status</code> 原样保留。独立切换书籍状态不会覆盖节点状态。</td></tr>
 <tr><td>在隔离环境准备同层子项，排序值分别为 <code>1</code>、<code>2147483648</code>、<code>4294967295</code> 和 <code>NULL</code></td><td><code>200</code>；三个正数按数值升序作为 JSON 数字返回，最后一项输出 <code>"sort": null</code>。根的排序仍为数字 <code>0</code>。</td></tr>
+<tr><td>同层有文件夹 <code>img</code>、文件 <code>img</code>、文件夹 <code>IMG</code>；另一章节也含 <code>img</code> 文件夹。</td><td>两个小写 <code>img</code> 文件夹和它们的全部后代均从响应中省略。同名文件、大写文件夹和兄弟章节保留。</td></tr>
+<tr><td>根文件夹名为 <code>img</code>，或某普通文件夹只有一个 <code>img</code> 子目录。</td><td>前者返回书籍摘要和 <code>catalogues: []</code>；后者保留普通文件夹并返回 <code>children: []</code>。</td></tr>
 <tr><td>同层含已排序项、待排「第2章」和「第10章」以及两个同名项</td><td>先按序号，再按中文名称自然序，最后按数值 ID。请求多次或打乱输入，响应顺序相同。不同父目录互不影响。</td></tr>
-<tr><td>两本书都存在，其中一本未导入目录，另一本只有根</td><td>两者均返回各自的书籍摘要。前者 <code>catalogues: []</code>，后者有一个根且 <code>children: []</code>。</td></tr>
+<tr><td>两本书都存在，其中一本未导入目录，另一本只有根</td><td>两者均返回各自的书籍摘要。未导入时返回 <code>catalogues: []</code>；若唯一根的名称为 <code>章节</code>，则保留根并返回 <code>children: []</code>。</td></tr>
 <tr><td>格式合法但书籍不存在</td><td>HTTP 200 / <code>20202</code>，<code>data: {}</code>。</td></tr>
 <tr><td>缺少 book、空值、数字型 ID、<code>"0"</code>、越界字符串或两个 JSON 对象</td><td><code>10101</code>。合法请求后附空白仍成功。</td></tr>
 <tr><td>缺少令牌或令牌无效 / 签名有效但已过期</td><td>分别为 <code>20004</code> / <code>20003</code>。</td></tr>

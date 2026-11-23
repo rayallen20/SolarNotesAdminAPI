@@ -15,8 +15,8 @@ type siblingOrder map[int64]uint32
 
 // reorderPlan 保存已通过请求校验的原分组与目标分组.
 type reorderPlan struct {
-	expected siblingOrder // expected 保存打开抽屉时的相对位置.
-	target   siblingOrder // target 保存提交后的位置, 正数从 1 开始.
+	expected       siblingOrder            // expected 保存打开抽屉时可编排节点的相对位置.
+	sortedChildren []reqCatalogue.ChildRef // sortedChildren 按目标阅读顺序保存已排项, 其余项待排.
 }
 
 // newReorderPlan 在获取数据库锁之前验证两份分组使用相同的完整成员集合.
@@ -43,7 +43,7 @@ func newReorderPlan(input *reqCatalogue.ReorderCatalogueReq) (*reorderPlan, erro
 			return nil, fmt.Errorf("%w: target is missing child %d", sys_error.CatalogueOrderInvalidErr, id)
 		}
 	}
-	return &reorderPlan{expected: expected, target: target}, nil
+	return &reorderPlan{expected: expected, sortedChildren: input.Target.SortedChildren}, nil
 }
 
 // indexOrderGroups 将两组 ID 合并为同一个索引, 同组和跨组重复均可被识别.
@@ -103,15 +103,48 @@ func (o siblingOrder) matches(rows []model.Catalogue) bool {
 	return true
 }
 
-// changes 根据锁定行计算目标状态, 按 ID 返回排序或显隐有变更的直接子节点.
+// sortPositions 给目标已排项分配正整数序号, 跳过 img 文件夹占用的序号.
+func (p *reorderPlan) sortPositions(reserved map[uint32]bool) (siblingOrder, error) {
+	if uint64(len(p.sortedChildren))+uint64(len(reserved)) > math.MaxUint32 {
+		return nil, fmt.Errorf("%w: not enough available sort positions", sys_error.CatalogueOrderInvalidErr)
+	}
+
+	positions := make(siblingOrder, len(p.sortedChildren))
+	var rank uint32
+	for _, child := range p.sortedChildren {
+		rank++
+		for reserved[rank] {
+			rank++
+		}
+		positions[child.ID] = rank
+	}
+	return positions, nil
+}
+
+// changes 按目录树返回的同级成员校验快照, 并保留 img 文件夹的序号和显隐.
 func (p *reorderPlan) changes(rows []model.Catalogue) (map[int64]model.Catalogue, error) {
-	if !p.expected.matches(rows) {
+	editable := make([]model.Catalogue, 0, len(rows))
+	reserved := make(map[uint32]bool)
+	for _, row := range rows {
+		if isCatalogueImageFolder(row.Type, row.Name) {
+			if row.Sort != nil {
+				reserved[*row.Sort] = true
+			}
+			continue
+		}
+		editable = append(editable, row)
+	}
+	if !p.expected.matches(editable) {
 		return nil, sys_error.CatalogueOrderChangedErr
 	}
+	positions, err := p.sortPositions(reserved)
+	if err != nil {
+		return nil, err
+	}
 	changes := make(map[int64]model.Catalogue)
-	for _, row := range rows {
+	for _, row := range editable {
 		target := row
-		if rank := p.target[row.ID]; rank > 0 {
+		if rank := positions[row.ID]; rank > 0 {
 			target.Sort = &rank
 			if row.Sort == nil {
 				target.DisplayStatus = enum.DisplayVisible

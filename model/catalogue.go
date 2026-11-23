@@ -176,7 +176,7 @@ func (c *Catalogue) lockChildren(tx *gorm.DB) ([]Catalogue, error) {
 	}
 
 	var rows []Catalogue
-	err = tx.Clauses(lock).Select("id", "book_id", "parent_id", "sort", "display_status").
+	err = tx.Clauses(lock).Select("id", "book_id", "parent_id", "type", "name", "sort", "display_status").
 		Where("book_id = ? AND parent_id = ?", c.BookID, c.ID).
 		Order("sort ASC").Order("id ASC").Find(&rows).Error
 	return rows, err

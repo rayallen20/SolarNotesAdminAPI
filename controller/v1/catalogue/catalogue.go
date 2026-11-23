@@ -17,7 +17,7 @@ import (
 	"github.com/gin-gonic/gin/binding"
 )
 
-// Tree 返回选中书籍的摘要和完整目录.
+// Tree 返回选中书籍的摘要和管理端目录树.
 func Tree(c *gin.Context) {
 	req := &reqCatalogue.TreeReq{}
 

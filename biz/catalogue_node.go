@@ -2,6 +2,7 @@ package biz
 
 import (
 	"fmt"
+	"slices"
 
 	"SolarNotesAdminAPI/enum"
 	"SolarNotesAdminAPI/model"
@@ -10,7 +11,12 @@ import (
 	"golang.org/x/text/language"
 )
 
-// buildCatalogueTree 将单本书的平面记录挂接为双向树, 空书返回空数组.
+// isCatalogueImageFolder 判断节点是否为目录树和同级排序中省略的 img 文件夹.
+func isCatalogueImageFolder(nodeType, name string) bool {
+	return nodeType == enum.TypeFolder && name == "img"
+}
+
+// buildCatalogueTree 校验整本书的目录, 返回去掉 img 文件夹分支的双向树.
 func buildCatalogueTree(bookID int64, rows []model.Catalogue) ([]*Catalogue, error) {
 	if len(rows) == 0 {
 		return []*Catalogue{}, nil
@@ -89,7 +95,11 @@ func buildCatalogueTree(bookID int64, rows []model.Catalogue) ([]*Catalogue, err
 			return nil, err
 		}
 
+		// 先将所有子节点入队, 被过滤的分支也要参与完整性校验.
 		queue = append(queue, node.Children...)
+		node.Children = slices.DeleteFunc(node.Children, func(child *Catalogue) bool {
+			return isCatalogueImageFolder(child.Type, child.Name)
+		})
 	}
 
 	if len(queue) != len(rows) {
@@ -97,6 +107,9 @@ func buildCatalogueTree(bookID int64, rows []model.Catalogue) ([]*Catalogue, err
 		return nil, err
 	}
 
+	if isCatalogueImageFolder(root.Type, root.Name) {
+		return []*Catalogue{}, nil
+	}
 	return []*Catalogue{root}, nil
 }
 
