@@ -7,14 +7,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 
-	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-// BookSortOccupiedErr 本错误表示同一天体下的书籍排序值已被其他记录占用
-var BookSortOccupiedErr = errors.New("book sort is occupied")
+// BookOrderInvalidErr 表示已有书序不连续或下一序号已超出列的范围.
+var BookOrderInvalidErr = errors.New("cannot append to book order")
 
 // BookNotFoundErr 本错误表示表示给定的书籍不存在
 var BookNotFoundErr = errors.New("book not found")
@@ -29,7 +29,7 @@ type Book struct {
 	Planet        *Planet `gorm:"-"`                                        // Planet 保存创建成功时读取的所属天体
 }
 
-// Insert 本方法用于在事务中确认关联天体存在,并插入接收者表示的书籍记录
+// Insert 在事务中将新书追加到所属天体的书单末尾.
 // (事务提交成功才返回 nil,查询/插入/提交错误均向调用方传播)
 func (b *Book) Insert(ctx context.Context) error {
 	if b == nil {
@@ -52,17 +52,17 @@ func (b *Book) Insert(ctx context.Context) error {
 		return errors.New("book planet ID must be positive")
 	}
 
-	// 先在副本上执行事务, 提交成功后再向调用方公开查询结果.
+	// 在副本上分配序号并加载天体, 事务提交成功后再回填接收者.
 	record := *b
-	if err := db.DB.WithContext(ctx).Transaction(record.insertWithPlanet); err != nil {
+	opts := &sql.TxOptions{Isolation: sql.LevelReadCommitted}
+	if err := db.DB.WithContext(ctx).Transaction(record.insertWithPlanet, opts); err != nil {
 		return err
 	}
 	*b = record
 	return nil
 }
 
-// insertWithPlanet 本函数用于在 Insert 方法中使用的命名事务回调,全部数据库操作共用同一事务
-// (关联天体的共享锁持有至事务结束,防止检查通过后天体在插入期间被删除)
+// insertWithPlanet 先排他锁定天体, 使同一天体的并发创建在空书单上也能依次分配序号.
 func (b *Book) insertWithPlanet(tx *gorm.DB) error {
 	if b == nil {
 		return errors.New("nil book model")
@@ -75,9 +75,7 @@ func (b *Book) insertWithPlanet(tx *gorm.DB) error {
 	planet := &Planet{}
 
 	err := tx.Select("id", "name", "title", "intro").
-		Clauses(clause.Locking{
-			Strength: "SHARE",
-		}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ?", b.PlanetID).
 		Take(planet).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -88,34 +86,33 @@ func (b *Book) insertWithPlanet(tx *gorm.DB) error {
 		return err
 	}
 
-	result := tx.Create(b)
-	err = result.Error
+	var order struct {
+		BookCount uint64
+		MinSort   uint64
+		MaxSort   uint64
+	}
+	err = tx.Model(&Book{}).
+		Select("COUNT(*) AS book_count, COALESCE(MIN(sort), 0) AS min_sort, COALESCE(MAX(sort), 0) AS max_sort").
+		Where("planet_id = ?", b.PlanetID).
+		Scan(&order).Error
 	if err != nil {
-		// 1062 也可能来自主键冲突,不能直接解释为排序值已被占用
-		var mysqlErr *mysql.MySQLError
-		if !errors.As(err, &mysqlErr) || mysqlErr.Number != 1062 {
-			return err
-		}
+		return err
+	}
 
-		// 在同一事务内执行当前读,确认所属天体与排序值的组合是否已存在
-		// 使用新的记录接收结果,避免接收者的 ID 意外参与查询条件
-		occupied := &Book{}
-		findErr := tx.Select("id").
-			Clauses(clause.Locking{
-				Strength: "SHARE",
-			}).
-			Where("planet_id = ? AND sort = ?", b.PlanetID, b.Sort).
-			Take(occupied).Error
-		if findErr == nil {
-			return errors.Join(BookSortOccupiedErr, err)
-		}
+	// (planet_id, sort) 唯一, 因此 N 本书占据 1..N 时必然连续. 隐藏书籍也占一个位置.
+	if order.BookCount > 0 && (order.MinSort != 1 || order.MaxSort != order.BookCount) {
+		return fmt.Errorf("%w: planet %d has non-contiguous positions (count=%d, min=%d, max=%d)",
+			BookOrderInvalidErr, b.PlanetID, order.BookCount, order.MinSort, order.MaxSort)
+	}
+	if order.BookCount >= math.MaxUint32 {
+		return fmt.Errorf("%w: planet %d has exhausted its positions (count=%d, min=%d, max=%d)",
+			BookOrderInvalidErr, b.PlanetID, order.BookCount, order.MinSort, order.MaxSort)
+	}
 
-		if errors.Is(findErr, gorm.ErrRecordNotFound) {
-			return err
-		}
-
-		// 复查失败时同时保留原始插入错误与查询错误,便于排查.
-		return errors.Join(err, findErr)
+	b.Sort = uint32(order.BookCount + 1)
+	result := tx.Create(b)
+	if result.Error != nil {
+		return result.Error
 	}
 
 	if result.RowsAffected != 1 {

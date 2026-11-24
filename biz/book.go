@@ -26,7 +26,7 @@ func (b *Book) Create(ctx context.Context, req *reqBook.CreateReq) error {
 		return &sys_error.InternalError{Cause: errors.New("nil book entity")}
 	}
 
-	if ctx == nil || req == nil || req.Book == nil || req.Book.Planet == nil || req.Book.Sort == nil {
+	if ctx == nil || req == nil || req.Book == nil || req.Book.Planet == nil {
 		return &sys_error.InternalError{Cause: errors.New("missing book creation arguments")}
 	}
 
@@ -35,7 +35,6 @@ func (b *Book) Create(ctx context.Context, req *reqBook.CreateReq) error {
 		ID:            snowflake.Next(),
 		PlanetID:      input.Planet.ID,
 		Title:         string(input.Title),
-		Sort:          *input.Sort,
 		DisplayStatus: input.DisplayStatus,
 	}
 
@@ -44,8 +43,8 @@ func (b *Book) Create(ctx context.Context, req *reqBook.CreateReq) error {
 		switch {
 		case errors.Is(err, model.PlanetNotFoundErr):
 			return sys_error.BookPlanetNotFoundErr
-		case errors.Is(err, model.BookSortOccupiedErr):
-			return sys_error.BookSortOccupiedErr
+		case errors.Is(err, model.BookOrderInvalidErr):
+			return &sys_error.InternalError{Cause: err}
 		default:
 			return &sys_error.DatabaseError{Cause: err}
 		}

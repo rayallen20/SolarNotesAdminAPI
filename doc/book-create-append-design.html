@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Solar Notes 书籍创建接口改造设计，涵盖请求字段、按天体自动追加书序、整理历史序号及并发验收。">
+  <title>按天体追加新书的书序 · Solar Notes</title>
+  <style>
+    :root { color-scheme: light; --ink: #192f29; --muted: #4d6359; --green: #205e49; --line: #cad9cf; --soft: #e7f1e9; --mono: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f7f9f6; color: var(--ink); font: 16px/1.8 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .page { max-width: 75rem; margin: auto; padding: 3rem 2rem 5rem; display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 3.5rem; }
+    aside { position: sticky; top: 2rem; align-self: start; }
+    nav { display: grid; margin-top: .8rem; border-left: 2px solid var(--line); }
+    a { color: var(--green); text-underline-offset: .2em; }
+    nav a { padding: .25rem .8rem; text-decoration: none; }
+    nav a:hover, nav a:focus-visible { background: var(--soft); text-decoration: underline; }
+    :focus-visible { outline: 3px solid #2870a4; outline-offset: 3px; }
+    main { min-width: 0; } header { padding-bottom: 1rem; border-bottom: 1px solid var(--line); }
+    .endpoint { color: var(--green); font: 650 1rem/1.5 var(--mono); }
+    h1 { font-size: clamp(2rem, 4vw, 3rem); line-height: 1.2; margin: .55rem 0 1rem; }
+    h2 { font-size: 1.55rem; line-height: 1.4; margin: 0 0 .5rem; } h3 { font-size: 1.12rem; margin: 1.3rem 0 .35rem; }
+    p { margin: .55rem 0 .85rem; } header p, .sources { color: var(--muted); }
+    section { margin-top: 2.5rem; scroll-margin-top: 1.25rem; }
+    .examples { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    figure { margin: .7rem 0; min-width: 0; }
+    figcaption { padding: .5rem .8rem; font-weight: 650; background: var(--soft); border-radius: .45rem .45rem 0 0; }
+    pre { margin: 0; padding: .85rem 1rem; overflow-x: auto; border-radius: 0 0 .45rem .45rem; background: #17342b; color: #f2f7f0; font: .85rem/1.65 var(--mono); tab-size: 4; }
+    pre code { font: inherit; } :not(pre) > code { padding: .06em .25em; border-radius: .22em; background: var(--soft); font: .9em var(--mono); overflow-wrap: anywhere; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: .45rem; }
+    table { width: 100%; border-collapse: collapse; background: white; font-size: .95rem; }
+    th, td { text-align: left; vertical-align: top; padding: .55rem .75rem; border-bottom: 1px solid var(--line); }
+    thead { background: var(--soft); } tbody tr:last-child td { border-bottom: none; }
+    ol, ul { padding-left: 1.55rem; } li + li { margin-top: .45rem; }
+    @media (max-width: 54rem) { .page { display: block; padding: 1.25rem 1rem 3rem; } aside { position: static; margin-bottom: 1.6rem; } nav { display: flex; flex-wrap: wrap; border: none; gap: .2rem .9rem; } nav a { padding: 0; } }
+    @media (max-width: 42rem) { .examples { grid-template-columns: 1fr; gap: 0; } th, td { padding: .5rem; } }
+    @media print { body { background: white; } .page { display: block; padding: 0; } aside { display: none; } .examples { display: block; } .table-wrap { overflow: visible; } pre { white-space: pre-wrap; overflow-wrap: anywhere; color: black; background: white; } h2, h3, figcaption { break-after: avoid; } tr { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+<div class="page">
+  <aside>
+    <strong>Solar Notes · 管理 API</strong>
+    <nav aria-label="文档目录">
+      <a href="#contract">请求与响应</a><a href="#layers">后端改动位置</a><a href="#transaction">事务与分配规则</a>
+      <a href="#migration">历史书序与发布</a><a href="#errors">错误与前端处理</a><a href="#acceptance">联调验收</a>
+    </nav>
+  </aside>
+  <main>
+    <header>
+      <div class="endpoint">POST /v1/book/create</div>
+      <h1>创建书籍时自动追加书序</h1>
+      <p>管理员选定天体，填写标题和初始显隐后提交。后端在创建事务内统计该天体的全部书籍，给新书分配末位。一个天体有 3 本显示、2 本隐藏的书时，下一本的序号是 6。</p>
+      <p class="sources"><a href="../../SolarNotesAdmin/doc/book-management-prototype.html#book-dialog">添加书籍原型</a> · <a href="../../SolarNotesAdmin/doc/book-management-api-design.html#create">书籍管理接口总览</a> · <a href="../model/book.go">当前模型实现</a></p>
+    </header>
+
+    <section id="contract">
+      <h2>请求与响应</h2>
+      <p>沿用管理员 Bearer 鉴权，请求头设置 <code>Content-Type: application/json</code>。添加表单可以用 <code>books.length + 1</code> 预览序号。Axios 创建请求只提交 <code>planet.id</code>、<code>title</code> 和 <code>display_status</code>。成功后重新读取 <code>POST /v1/book/options</code>，以该天体最新书单上的序号为准。</p>
+      <div class="examples">
+        <figure><figcaption>创建请求</figcaption><pre><code data-lang="json">{
+  "book": {
+    "planet": { "id": "2123435429930733568" },
+    "title": "数据库索引设计",
+    "display_status": "visible"
+  }
+}</code></pre></figure>
+        <figure><figcaption>成功响应 · HTTP 200</figcaption><pre><code data-lang="json">{
+  "code": 200,
+  "message": "success",
+  "data": {}
+}</code></pre></figure>
+      </div>
+      <p><code>book</code> 和 <code>book.planet</code> 均为必填对象。天体 ID 是正 <code>int64</code> 的十进制字符串。标题沿用 <code>Title.UnmarshalJSON</code> 和 <code>jstext.TrimSpace</code>，修整后为 1 至 20 个 Unicode 码点，允许同名。<code>display_status</code> 必填，取 <code>visible</code> 或 <code>hidden</code>，原型默认选中显示。一次成功请求只创建一条 <code>book</code> 记录。</p>
+      <p>本次前后端联调以此处的三字段契约为准。创建请求 DTO 中移除 <code>CreateBookReq.Sort</code>。<code>book.sort</code> 仍是数据库中的书序，业务实体和书单响应都使用它。页面上看到的预览值可能因其他管理员同时添加书籍而改变。</p>
+    </section>
+
+    <section id="layers">
+      <h2>后端改动位置</h2>
+      <div class="table-wrap"><table><thead><tr><th scope="col">现有位置</th><th scope="col">改造后的职责</th></tr></thead><tbody>
+        <tr><td><a href="../param/req/v1/book/create.go">param/req/v1/book/create.go</a></td><td>删除 <code>CreateBookReq.Sort</code> 及其绑定标签。控制器继续用 <code>ShouldBindJSON</code> 校验请求。</td></tr>
+        <tr><td><a href="../biz/book.go">biz/book.go</a></td><td><code>(*Book).Create(ctx, req) error</code> 保留接收者、上下文、请求及嵌套对象的判空，删除 <code>req.Book.Sort == nil</code>。构造模型时填入雪花 ID、天体 ID、标题与显隐，调用 <code>record.Insert(ctx)</code>。成功后用 <code>fillByORM(ctx, record)</code> 回填实际序号与所属天体。</td></tr>
+        <tr><td><a href="../model/book.go">model/book.go</a></td><td>沿用 <code>(*Book).Insert(ctx context.Context) error</code> 及具名事务回调 <code>(*Book).insertWithPlanet(tx *gorm.DB) error</code>。在回调内锁定天体、计算序号并写入模型副本，成功提交后将副本赋回接收者。</td></tr>
+        <tr><td><a href="../controller/v1/book/book.go">controller/v1/book/book.go</a></td><td>删除创建流程中“排序值已被占用”的错误映射，按下文区分字段校验、天体不存在、书序异常和数据库错误。成功仍调用 <code>respBody.Success(map[string]any{})</code>。</td></tr>
+      </tbody></table></div>
+      <figure><figcaption>Go · 替换请求包中的 CreateBookReq 定义</figcaption><pre><code data-lang="go">// CreateBookReq 定义添加书籍时由管理员填写的字段.
+type CreateBookReq struct {
+    Title         Title            `json:"title" binding:"required,max=20"`                        // Title 在绑定时去除首尾空白.
+    DisplayStatus string           `json:"display_status" binding:"required,oneof=visible hidden"` // DisplayStatus 是书籍的初始显隐状态.
+    Planet        *CreatePlanetReq `json:"planet" binding:"required"`                              // Planet 引用所属天体的 ID.
+}</code></pre></figure>
+    </section>
+
+    <section id="transaction">
+      <h2>事务内分配末位</h2>
+      <p>同一天体的创建与后续的 <code>book/reorder</code> 遵循同一加锁顺序，先按主键排他锁定 <code>planet</code> 行，再操作书籍。空书单也有可锁定的天体行。现有 <code>insertWithPlanet</code> 使用的 <code>SHARE</code> 需要改为 GORM 的 <code>clause.Locking{Strength: "UPDATE"}</code>。</p>
+      <ol>
+        <li>在请求上下文中开始读写事务。建议对此事务使用 <code>sql.LevelReadCommitted</code>。先按 <code>planet_id</code> 对应的主键锁天体，同时读取回填需要的 <code>id, name, title, intro</code>。查无记录则回滚并返回 <code>20102</code>。</li>
+        <li>取得天体锁后，用同一 <code>tx</code> 对该天体的 <code>book</code> 做一次聚合，统计所有显示和隐藏书籍。在上述隔离级别下，这条查询可以看到前一个持锁事务刚提交的书。聚合无需给空书单所在的索引范围额外加锁。</li>
+        <li>用 <code>uint64</code> 接收数量 <code>N</code>。非空书单必须满足 <code>min_sort == 1 &amp;&amp; max_sort == N</code>。在联合唯一约束和非空无符号整数列下，这就证明序号连续。异常时回滚。<code>N &gt;= 4294967295</code> 表示没有下一个合法序号，也要在加一和转换为 <code>uint32</code> 之前返回错误。</li>
+        <li>回调的接收者 <code>b</code> 指向模型副本。在回调内设置 <code>b.Sort = uint32(N + 1)</code>，执行 <code>tx.Create(b)</code>，检查 <code>RowsAffected == 1</code>，并将已加载的天体赋给 <code>b.Planet</code>。</li>
+        <li>沿用现有具名回调，在 <code>Transaction</code> 的第二个参数传入 <code>&amp;sql.TxOptions{Isolation: sql.LevelReadCommitted}</code>。回调返回错误时事务回滚，事务成功提交后再执行 <code>*b = record</code> 并返回业务层。</li>
+      </ol>
+      <figure><figcaption>SQL · 同一事务中的两次读取，问号绑定同一天体 ID</figcaption><pre><code data-lang="sql">SELECT id, name, title, intro
+FROM planet
+WHERE id = ?
+FOR UPDATE;
+
+SELECT COUNT(*) AS book_count,
+       COALESCE(MIN(sort), 0) AS min_sort,
+       COALESCE(MAX(sort), 0) AS max_sort
+FROM book
+WHERE planet_id = ?;</code></pre></figure>
+      <p><strong>并发示例。</strong>同一天体已有 5 本书。A 取得锁并插入第 6 本，B 等待。A 提交后，B 在锁内读到 6 本书。B 因此写入第 7 本，即使两个表单打开时都预览为第 6 本。若 A 回滚，B 可以使用第 6 位。不同天体使用各自的天体行。</p>
+    </section>
+
+    <section id="migration">
+      <h2>历史书序与发布</h2>
+      <p>先核对 <code>book.sort</code> 为 <code>INT UNSIGNED NOT NULL</code>，且 <code>(planet_id, sort)</code> 有联合唯一索引。符合上述结构时，改造仅涉及书序数据，无需变更列类型或重建索引。以下查询供上线前在目标库执行。</p>
+      <figure><figcaption>SQL · 检查表结构，列出需要整理的天体</figcaption><pre><code data-lang="sql">SHOW CREATE TABLE book;
+
+SELECT planet_id, COUNT(*) AS book_count,
+       MIN(sort) AS first_sort, MAX(sort) AS last_sort
+FROM book
+GROUP BY planet_id
+HAVING MIN(sort) &lt;&gt; 1 OR MAX(sort) &lt;&gt; COUNT(*)
+ORDER BY planet_id;</code></pre></figure>
+      <p>例如原书序是 <code>[1, 3]</code>，按数量算出的下一位 3 已被占用。先将旧书整理为 <code>[1, 2]</code>，新书才应得到 3。历史序号 0 也参与整理。空天体不会出现在查询结果中，创建第一本时自然得到 1。</p>
+      <h3>按原阅读顺序整理，保留联合唯一索引</h3>
+      <ol>
+        <li>发布窗口先暂停所有会增删书籍或改书序的写入，等待旧事务结束，再做最终检查。保留受影响书籍的 <code>planet_id, id, sort</code> 映射以便核对。每个受影响的天体单独开事务，先锁天体行，再按 <code>sort ASC, id ASC</code> 读取并锁定该天体的书籍行。</li>
+        <li>按照读出的固定顺序，给每行计算目标序号 <code>1..N</code>。用宽整数计算，若 <code>N &gt; 4294967295</code> 则停止处理该天体。对需要增大序号的行按旧序号<strong>降序</strong>更新，再对需要减小序号的行按旧序号<strong>升序</strong>更新，原值等于目标的行跳过。这样每次先腾出下一行需要的位置，也适用于含有最大无符号整数的旧数据。</li>
+        <li>逐行执行下方参数化更新并检查恰好更新一行。比如 <code>[0, 1, 4]</code> 依次执行 <code>1 → 2</code>、<code>0 → 1</code>、<code>4 → 3</code>。事务内复核每个 ID 对应的目标及连续性，通过后提交。任一步失败则回滚该天体的事务。</li>
+      </ol>
+      <figure><figcaption>SQL · 每行绑定目标序号、天体 ID、书籍 ID 和旧序号</figcaption><pre><code data-lang="sql">UPDATE book
+SET sort = ?
+WHERE planet_id = ? AND id = ? AND sort = ?;</code></pre></figure>
+      <p>历史书序检查返回零行后，发布按事务分配末位的后端，并将重构页面的 Axios 创建请求接入上文契约，再开放书籍创建。</p>
+    </section>
+
+    <section id="errors">
+      <h2>错误与前端处理</h2>
+      <p>控制器沿用 HTTP 200 和 <code>{code, message, data}</code> 包装，失败时 <code>data</code> 为空对象。绑定错误由 <code>ShouldBindJSON</code> 处理，事务中的预期错误由业务层映射。</p>
+      <div class="table-wrap"><table><thead><tr><th scope="col">条件</th><th scope="col">业务码与动作</th></tr></thead><tbody>
+        <tr><td>请求字段无效</td><td><code>10101</code>，沿用 <code>ValidateError</code>，前端保留表单供修正。</td></tr>
+        <tr><td>所选天体已不存在</td><td><code>20102</code>，沿用 <code>BookPlanetNotFoundError()</code>。页面刷新天体选项。</td></tr>
+        <tr><td>书序不连续，或序号空间已满</td><td>建议模型返回可识别的状态错误，业务层包装为 <code>sys_error.InternalError</code>，对外 <code>500</code>。排查时可从错误链查看天体、数量、最小和最大序号。</td></tr>
+        <tr><td>SQL 查询、插入或提交失败</td><td><code>10201</code>，保留原错误并沿用 <code>sys_error.DatabaseError</code>。新流程中分配后的重复键属于异常，可能来自雪花主键或其他写入路径。移除创建路径中针对 MySQL 1062 的排序占用复查，以及业务层、控制器对 <code>BookSortOccupiedErr</code> 的映射。</td></tr>
+        <tr><td>令牌过期或无效</td><td><code>20003</code> 或 <code>20004</code>，由现有鉴权中间件处理。</td></tr>
+      </tbody></table></div>
+      <p>创建允许同名，也未定义幂等键。连接中断或提交结果未知时，先读取该天体的书单核实，再由管理员决定是否重提。若创建已收到成功响应、仅刷新失败，页面应提示“已保存，列表刷新失败”，重试读取即可。</p>
+    </section>
+
+    <section id="acceptance">
+      <h2>联调验收</h2>
+      <p>在测试库选用两个天体，记录请求前的 <code>book/options</code>。成功用例核对 <code>data: {}</code>、新增行、所属天体及实际序号。已知回滚的失败用例核对原书单。</p>
+      <div class="table-wrap"><table><thead><tr><th scope="col">场景</th><th scope="col">预期结果</th></tr></thead><tbody>
+        <tr><td>空天体创建隐藏书，再追加显示书</td><td>得到 1、2，另一天体独立从 1 开始。同名书可分别创建。业务实例在提交后获得真实 <code>Sort</code> 与 <code>Planet</code>。</td></tr>
+        <tr><td>已有 5 本书，其中 2 本隐藏。打开添加抽屉并提交新书</td><td>检查 Axios 请求体中的 <code>book</code> 仅含标题、显隐和天体引用。无其他写入时，创建成功后刷新 <code>book/options</code>，新书的 <code>sort</code> 为 6。</td></tr>
+        <tr><td>校验标题、显隐及天体</td><td>标题修整后恰好 20 个码点可通过，21 个或全空白返回 <code>10101</code>。显隐缺失、枚举值无效或 ID 格式非法也返回 <code>10101</code>。有效 ID 引用不存在的天体返回 <code>20102</code>。</td></tr>
+        <tr><td>两条独立连接同时对同一空书单或已有 5 本书的书单发起创建请求</td><td>两笔均提交成功时，序号分别为 1、2 或 6、7。若先取得锁的事务回滚，另一笔可使用原末位。</td></tr>
+        <tr><td>两组历史书序分别为 <code>[0,1,4]</code> 和 <code>[1,3]</code></td><td>整理前触发连续性检查，创建回滚。整理后原 ID 相对顺序和显隐保留，下一本分别得到 4、3。用构造的聚合值检查上限。<code>N = 4294967294</code> 可分配最后一位，<code>N = 4294967295</code> 拒绝追加。</td></tr>
+        <tr><td>将来接入调序后，与追加同时执行</td><td>按取得天体锁的顺序生效。若追加先提交，调序会发现旧书单少了一本。若调序先提交，创建在新顺序末尾追加。每次成功后的书序均为 <code>1..N</code>。</td></tr>
+      </tbody></table></div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

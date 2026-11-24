@@ -36,8 +36,6 @@ func Create(c *gin.Context) {
 		switch {
 		case errors.Is(err, sys_error.BookPlanetNotFoundErr):
 			respBody.BookPlanetNotFoundError()
-		case errors.Is(err, sys_error.BookSortOccupiedErr):
-			respBody.BookSortOccupiedError()
 		case errors.As(err, &dbErr):
 			respBody.DBError(dbErr)
 		default:

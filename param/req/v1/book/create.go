@@ -13,7 +13,6 @@ type CreateReq struct {
 // CreateBookReq 本结构体用于定义表单提交的书籍字段
 type CreateBookReq struct {
 	Title         Title            `json:"title" binding:"required,max=20"`                        // Title 在绑定时去除首尾空白
-	Sort          *uint32          `json:"sort" binding:"required,gte=1"`                          // Sort 排序字段 (非负整数)
 	DisplayStatus string           `json:"display_status" binding:"required,oneof=visible hidden"` // DisplayStatus 显示状态
 	Planet        *CreatePlanetReq `json:"planet" binding:"required"`                              // Planet 仅引用已创建天体的 ID
 }
