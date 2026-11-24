@@ -221,3 +221,27 @@ func (a *Admin) ChangePassword(ctx context.Context, req *reqAdmin.ChangePassword
 		return &sys_error.DatabaseError{Cause: err}
 	}
 }
+
+// Logout 根据鉴权取得的管理员 ID 和令牌摘要撤销当前会话.
+func (a *Admin) Logout(ctx context.Context, sessionDigest [sha256.Size]byte) error {
+	if a == nil || a.ID <= 0 {
+		return &sys_error.InternalError{Cause: errors.New("biz.Admin.Logout: missing administrator ID")}
+	}
+	if ctx == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Admin.Logout: nil context")}
+	}
+
+	record := &model.Admin{ID: a.ID}
+	err := record.RevokeSession(ctx, sessionDigest)
+	if err != nil {
+		switch {
+		case errors.Is(err, model.AdminNotFoundErr), errors.Is(err, model.AdminSessionChangedErr):
+			return auth.InvalidTokenErr
+		case errors.Is(err, auth.InvalidHashErr):
+			return &sys_error.InternalError{Cause: err}
+		default:
+			return &sys_error.DatabaseError{Cause: err}
+		}
+	}
+	return nil
+}

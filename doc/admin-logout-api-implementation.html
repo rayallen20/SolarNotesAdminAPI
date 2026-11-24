@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Solar Notes 管理后台登出接口的空请求体、行锁与会话撤销、Go 分层实现及并发验收。">
+  <title>退出当前管理员会话 · Solar Notes API 实现文档</title>
+  <style>:root { color-scheme: light; --ink: #20342d; --muted: #495f55; --green: #205d47; --rule: #c9d8cd; --soft: #e8f1ea; --mono: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f8faf7; color: var(--ink); font: 16px/1.75 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .page { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 3.2rem; max-width: 76rem; margin: auto; padding: 2.8rem 2rem 5rem; }
+    aside { position: sticky; top: 2rem; align-self: start; }
+    nav { display: grid; border-left: 2px solid var(--rule); margin-top: .75rem; }
+    a { color: var(--green); text-underline-offset: .2em; } nav a { padding: .25rem .8rem; text-decoration: none; } nav a:hover { text-decoration: underline; }
+    :focus-visible { outline: 3px solid #2673a1; outline-offset: 3px; }
+    main { min-width: 0; } header { border-bottom: 1px solid var(--rule); padding-bottom: 1rem; }
+    .route { font: 650 .99rem/1.5 var(--mono); color: var(--green); }
+    h1 { margin: .55rem 0 1rem; font-size: clamp(2rem, 4vw, 3.05rem); line-height: 1.2; }
+    h2 { margin: 0 0 .6rem; font-size: 1.55rem; line-height: 1.35; }
+    section { margin-top: 2.5rem; scroll-margin-top: 1.25rem; }
+    p { margin: .5rem 0 .85rem; } header p, .source { color: var(--muted); }
+    figure { margin: 1rem 0; } figcaption { background: var(--soft); padding: .45rem .85rem; border-radius: .4rem .4rem 0 0; font-weight: 650; }
+    pre { margin: 0; background: #18372c; color: #f4f8f4; padding: .85rem 1rem; border-radius: 0 0 .4rem .4rem; overflow-x: auto; tab-size: 4; font: .87rem/1.65 var(--mono); } pre code { font: inherit; }
+    :not(pre) > code { background: var(--soft); border-radius: .2rem; padding: .08em .25em; font: .9em var(--mono); overflow-wrap: anywhere; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: .4rem; }
+    table { border-collapse: collapse; width: 100%; background: white; font-size: .95rem; }
+    th, td { padding: .55rem .75rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+    th { background: var(--soft); } tbody tr:last-child td { border-bottom: 0; }
+    @media (max-width: 52rem) { .page { display: block; padding: 1.2rem 1rem 3rem; } aside { position: static; margin-bottom: 1.5rem; } nav { display: flex; flex-wrap: wrap; gap: .2rem .9rem; border: 0; } nav a { padding: 0; } }
+    @media print { body { background: white; } .page { display: block; padding: 0; } aside { display: none; } pre { white-space: pre-wrap; overflow-wrap: anywhere; background: white; color: black; } .table-wrap { overflow: visible; } h2, figcaption { break-after: avoid; } tr { break-inside: avoid; } }
+    .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    .pair figure { min-width: 0; }
+    h3 { font-size: 1.1rem; margin: 1.4rem 0 .45rem; }
+    @media (max-width: 66rem) { .pair { display: block; } }
+    @media print { .pair { display: block; } }
+    .table-wrap td:first-child { min-width: 6em; }
+    li + li { margin-top: .4rem; }</style>
+</head>
+<body>
+<div class="page">
+  <aside>
+    <strong>Solar Notes · 管理 API</strong>
+    <nav aria-label="文档目录">
+      <a href="#contract">请求与响应</a><a href="#session">共用会话核验</a>
+      <a href="#transaction">锁定并撤销会话</a><a href="#business">业务层错误映射</a>
+      <a href="#http">控制器与路由</a><a href="#client">退出按钮的行为</a>
+      <a href="#verify">联调与验收</a>
+    </nav>
+  </aside>
+  <main>
+    <header>
+      <div class="route">POST /v1/admin/logout</div>
+      <h1>退出当前管理员会话</h1>
+      <p>管理员点击确认退出后，服务端撤销此次请求携带的令牌。关键情形是旧会话 A 的退出还在处理中，同一账号已经登录取得 B。退出事务须在写入前核对令牌摘要，让 B 继续有效。</p>
+      <p class="source"><a href="../../SolarNotesAdmin/doc/admin-logout-api-design.html">前后端登出契约</a> · <a href="admin-password-change-api-implementation.html">现有改密与会话撤销实现</a></p>
+    </header>
+
+    <section id="contract">
+      <h2>请求与响应</h2>
+      <p>前端通过现有请求实例调用 <code>request.post('/v1/admin/logout')</code>。浏览器经开发代理时显示 <code>/api/v1/admin/logout</code>。请求体为 <strong>0 字节</strong>，无路径参数或查询参数，<code>Content-Type</code> 可省略。管理员 ID 和令牌摘要均由鉴权中间件提供。Postman 选 <strong>Body → none</strong>，在 <strong>Authorization → Bearer Token</strong> 填入令牌原文。</p>
+      <figure><figcaption>直接访问后端 · HTTP 请求示例</figcaption><pre><code id="request-http" data-lang="http">POST /v1/admin/logout HTTP/1.1
+Host: 127.0.0.1:4060
+Authorization: Bearer &lt;access_token&gt;
+Content-Length: 0</code></pre></figure>
+      <p>沿用 HTTP 200 和统一响应体。所有分支的 <code>data</code> 都是空对象 <code>{}</code>。鉴权中间件已设置 <code>Cache-Control: no-store</code>。</p>
+      <figure><figcaption>撤销已提交</figcaption><pre><code id="logout-success" data-lang="json">{
+  "code": 200,
+  "message": "success",
+  "data": {}
+}</code></pre></figure>
+      <div class="pair">
+      <figure><figcaption>令牌无效、已撤销或已替换</figcaption><pre><code id="logout-invalid" data-lang="json">{
+  "code": 20004,
+  "message": "登录状态无效,请重新登录",
+  "data": {}
+}</code></pre></figure>
+      <figure><figcaption>令牌已过期</figcaption><pre><code id="logout-expired" data-lang="json">{
+  "code": 20003,
+  "message": "登录已过期,请重新登录",
+  "data": {}
+}</code></pre></figure>
+      </div>
+      <p>成功表示服务端已提交撤销。仍在 JWT 有效期内的同一令牌再次退出，返回 <code>20004</code>。两次调用后的会话状态相同，前端可依据各自的响应走相应的清理流程。</p>
+    </section>
+
+    <section id="session">
+      <h2>与改密共用锁内的会话核验</h2>
+      <p>现有 <code>AdminAuth.Handle</code> 已在 JWT 和数据库会话验证成功后写入 <code>CurrentAdminID(c)</code>、<code>CurrentAdminTokenDigest(c)</code> 所读取的值。后者是对本次请求的原始 Bearer 令牌计算的 32 字节 SHA-256 摘要。登出控制器可以直接使用这两个上下文值。<a href="../middleware/admin_auth.go">鉴权中间件</a> · <a href="../middleware/admin_context.go">上下文读取函数</a></p>
+      <p>将现有 <code>(*model.Admin).ChangePassword()</code> 中核验 <code>locked.TokenHash</code> 的逻辑移为一个私有方法。登出与改密都对各自事务锁住的记录调用它。<code>auth.MatchSHA256Digest</code> 会解码数据库中的十六进制，可以正确匹配大小写摘要，并将损坏的摘要与会话已替换区分开。以下所有 Go 片段都可以沿用对应文件的现有导入。<a href="../auth/hash.go">现有摘要比较方法</a></p>
+      <figure><figcaption>追加私有方法 · <code>model/admin.go</code></figcaption><pre><code id="model-check" data-lang="go" data-file="model/admin.go" data-mode="append">// checkSessionDigest 核对已读行保存的令牌摘要, 供持有行锁的写事务使用.
+func (a *Admin) checkSessionDigest(sessionDigest [sha256.Size]byte) error {
+	if a.TokenHash == "" {
+		return AdminSessionChangedErr
+	}
+	matched, err := auth.MatchSHA256Digest(sessionDigest, a.TokenHash)
+	if err != nil {
+		return err
+	}
+	if !matched {
+		return AdminSessionChangedErr
+	}
+	return nil
+}</code></pre></figure>
+      <p>在 <code>ChangePassword()</code> 锁行查询成功后，用下面三行替换从 <code>if locked.TokenHash == ""</code> 到 <code>if !sessionMatches</code> 分支结尾的整段代码。后面从 <code>passwordMatches, err := ...</code> 开始的原密码核验、双字段更新及提交继续执行。</p>
+      <figure><figcaption>替换 ChangePassword 中原有的会话比对 · <code>model/admin.go</code></figcaption><pre><code id="password-check" data-lang="go" data-file="model/admin.go" data-mode="replace-password-session-check">err = locked.checkSessionDigest(sessionDigest)
+if err != nil {
+	return err
+}</code></pre></figure>
+    </section>
+
+    <section id="transaction">
+      <h2>锁定管理员，只清空本次会话的令牌摘要</h2>
+      <p>为 <code>model.Admin</code> 增加 <code>RevokeSession</code>。在 <code>READ COMMITTED</code> 事务中按主键执行 <code>SELECT ... FOR UPDATE</code>，只读取 <code>id</code> 和 <code>token_hash</code>。锁内核验通过后，由同一事务按锁定行的主键显式写入 <code>token_hash = ''</code> 并检查影响一行。提交成功后才向控制器返回成功。<a href="../model/admin.go">现有管理员模型</a></p>
+      <p>登录使用的 <code>UpdateTokenHash()</code> 以密码摘要作为更新条件。A 和 B 可以由同一密码先后登录，所以单靠这个条件无法判断库中当前保存的是哪一枚令牌。此处需要比较的是请求 A 的摘要与行内最新的 <code>token_hash</code>。</p>
+      <figure><figcaption>追加撤销会话的模型方法 · <code>model/admin.go</code></figcaption><pre><code id="model-logout" data-lang="go" data-file="model/admin.go" data-mode="append">// RevokeSession 锁定当前管理员, 仅撤销与本次请求摘要匹配的会话.
+func (a *Admin) RevokeSession(ctx context.Context, sessionDigest [sha256.Size]byte) error {
+	if a == nil || a.ID &lt;= 0 {
+		return errors.New("model.Admin.RevokeSession: missing administrator ID")
+	}
+	if ctx == nil {
+		return errors.New("model.Admin.RevokeSession: nil context")
+	}
+	if db.DB == nil {
+		return errors.New("database is not initialized")
+	}
+
+	tx := db.DB.WithContext(ctx).Begin(&amp;sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
+
+	var locked Admin
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id", "token_hash").
+		Where("id = ?", a.ID).Take(&amp;locked).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return AdminNotFoundErr
+	}
+	if err != nil {
+		return err
+	}
+	err = locked.checkSessionDigest(sessionDigest)
+	if err != nil {
+		return err
+	}
+
+	// locked.ID 来自锁定查询, Update 显式写入空字符串.
+	result := tx.Model(&amp;locked).Update("token_hash", "")
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("administrator logout did not affect exactly one row")
+	}
+	return tx.Commit().Error
+}</code></pre></figure>
+      <div class="table-wrap"><table><thead><tr><th scope="col">并发次序</th><th scope="col">服务器结果</th></tr></thead><tbody>
+        <tr><td>A 的请求已通过鉴权，B 的登录先写入新摘要</td><td>A 拿到行锁后读到 B 的摘要，返回 20004。B 继续正常访问。</td></tr>
+        <tr><td>A 先锁行并成功提交，随后 B 登录</td><td>A 返回 200。管理员可以用原密码登录取得 B，B 的摘要由登录接口写入。</td></tr>
+        <tr><td>两个标签页持同一令牌 A，同时确认退出</td><td>一次返回 200，另一次在入口鉴权或锁内核对得到 20004。之后 A 发起的受保护请求均失去授权。</td></tr>
+        <tr><td>改密先提交，或登出先提交</td><td>先提交的一方已清空令牌摘要；另一方使用 A 时得到 20004。若登出先完成，后到的改密不会写入新密码。</td></tr>
+      </tbody></table></div>
+      <p>撤销作用于后续鉴权。已经通过入口鉴权的在途请求可能继续执行；改密和登出之所以能识别这段时间内的变化，是因为两者在写入前还会锁行复核会话。</p>
+    </section>
+
+    <section id="business">
+      <h2>业务层把撤销结果映射到已有错误</h2>
+      <p><code>biz.Admin.Logout(ctx, sessionDigest)</code> 从接收者取已鉴权管理员 ID，调用模型并转换错误。该操作没有业务响应字段，也无需新建请求或响应 DTO。使用现有表和业务码即可。<a href="../biz/admin.go">管理员业务实体</a> · <a href="../resp_body/resp_body.go">响应码与包装器</a></p>
+      <figure><figcaption>追加业务方法 · <code>biz/admin.go</code></figcaption><pre><code id="biz-logout" data-lang="go" data-file="biz/admin.go" data-mode="append">// Logout 根据鉴权取得的管理员 ID 和令牌摘要撤销当前会话.
+func (a *Admin) Logout(ctx context.Context, sessionDigest [sha256.Size]byte) error {
+	if a == nil || a.ID &lt;= 0 {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Admin.Logout: missing administrator ID")}
+	}
+	if ctx == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Admin.Logout: nil context")}
+	}
+
+	record := &amp;model.Admin{ID: a.ID}
+	err := record.RevokeSession(ctx, sessionDigest)
+	if err != nil {
+		switch {
+		case errors.Is(err, model.AdminNotFoundErr), errors.Is(err, model.AdminSessionChangedErr):
+			return auth.InvalidTokenErr
+		case errors.Is(err, auth.InvalidHashErr):
+			return &amp;sys_error.InternalError{Cause: err}
+		default:
+			return &amp;sys_error.DatabaseError{Cause: err}
+		}
+	}
+	return nil
+}</code></pre></figure>
+      <div class="table-wrap"><table><thead><tr><th scope="col">业务码</th><th scope="col">来源与含义</th></tr></thead><tbody>
+        <tr><td><code>200</code></td><td>本次匹配的会话已撤销，事务已提交。</td></tr>
+        <tr><td><code>20003</code></td><td>入口鉴权发现签名有效的 JWT 已过期。</td></tr>
+        <tr><td><code>20004</code></td><td>缺失或无效令牌、账号记录消失、令牌摘要已清空或与当前会话不符；沿用公共鉴权错误。</td></tr>
+        <tr><td><code>10201</code></td><td>开启事务、锁行查询、更新或提交报错，或目标行数异常。固定文案为“数据库操作失败,请稍后重试”。</td></tr>
+        <tr><td><code>500</code></td><td>库中非空令牌摘要格式损坏等内部故障。固定文案为“服务暂时不可用,请稍后重试”。</td></tr>
+        <tr><td><code>10101</code></td><td>全局请求体中间件可在进入控制器前拒绝超限或读取失败的请求。正常的零字节请求直接通过。</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section id="http">
+      <h2>控制器读取上下文，注册受保护路由</h2>
+      <p>直接取得 ID 与摘要，调用 <code>biz.Admin.Logout()</code>。缺少任一鉴权上下文值时，按现有改密控制器的约定返回 <code>20004</code>。空请求体无需 <code>ShouldBindJSON()</code>，否则合法请求会在解码时遇到 <code>EOF</code>。响应使用 <code>RespBody.Success(map[string]any{})</code>，页面跳转留给前端处理。</p>
+      <figure><figcaption>追加控制器 · <code>controller/v1/admin/admin.go</code></figcaption><pre><code id="controller-logout" data-lang="go" data-file="controller/v1/admin/admin.go" data-mode="append">// Logout 使用当前鉴权上下文执行登出, 各业务分支都返回空 data 对象.
+func Logout(c *gin.Context) {
+	respBody := &amp;resp_body.RespBody{}
+	adminID, hasID := middleware.CurrentAdminID(c)
+	sessionDigest, hasDigest := middleware.CurrentAdminTokenDigest(c)
+	if !hasID || !hasDigest {
+		respBody.InvalidToken()
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	administrator := &amp;biz.Admin{ID: adminID}
+	err := administrator.Logout(c.Request.Context(), sessionDigest)
+	if err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, auth.InvalidTokenErr):
+			respBody.InvalidToken()
+		case errors.As(err, &amp;dbErr):
+			respBody.DBError(dbErr)
+		default:
+			respBody.InternalError(&amp;sys_error.InternalError{Cause: err})
+		}
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	respBody.Success(map[string]any{})
+	c.JSON(http.StatusOK, respBody)
+}</code></pre></figure>
+      <p>在 <code>main.go</code> 的 <code>newRouter()</code> 中，把下行放在现有 <code>v1.POST("/admin/password/change", admin.ChangePassword)</code> 之后。沿用全局管理员鉴权，免鉴权集合中只有登录路由。<a href="../main.go">路由与中间件顺序</a> · <a href="../middleware/request_body_limit.go">请求体限制</a></p>
+      <figure><figcaption>注册登出路由 · <code>main.go</code></figcaption><pre><code id="route" data-lang="go" data-file="main.go" data-mode="after-change-password">v1.POST("/admin/logout", admin.Logout)</code></pre></figure>
+    </section>
+
+    <section id="client">
+      <h2>退出按钮怎样处理服务器结果</h2>
+      <p>用户取消确认时直接关闭弹窗。确认时先记录发起请求的令牌，再调用接口，并在等待期间锁定按钮。会话需要保留到请求发出，因为现有 Axios 拦截器会从 Store 读取令牌、设置 Authorization 头。<a href="../../SolarNotesAdmin/src/views/LayoutPage.vue">顶栏退出入口</a> · <a href="../../SolarNotesAdmin/src/utils/request.js">公共请求实例</a></p>
+      <ul>
+        <li><strong>200</strong>　若本页仍使用发起请求时的令牌，清理会话并调用 <code>router.replace({name: 'login'})</code>。其他标签页只要继续用 A，下一次访问受保护资源也会失败。</li>
+        <li><strong>20003 / 20004</strong>　由现有公共鉴权拦截器比对请求令牌、处理会话并跳转，按钮处理函数到此结束。</li>
+        <li><strong>服务端故障、断网或超时</strong>　若仍为原会话，按用户意图清理本机凭据并返回登录页，提示“本机已退出，未能确认服务器会话是否已撤销”。响应丢失时，事务可能已经提交。</li>
+        <li><strong>等待期间已切换到 B</strong>　忽略 A 的迟到反馈和跳转。跨标签页按 Store 已有的令牌比对保留新凭据。登出请求归属于顶栏主动退出流程；改密成功和公共鉴权失败继续直接使用本地清理方法。<a href="../../SolarNotesAdmin/src/stores/user.js">会话清理与跨标签页保护</a></li>
+      </ul>
+    </section>
+
+    <section id="verify">
+      <h2>联调与验收</h2>
+      <p>用隔离测试账号登录取得 A，先以 A 请求 <code>GET /v1/planet/list</code> 确认业务码为 200。下面的“重复退出”和“并发退出”均在 A 的 JWT 有效期内执行，以便准确区分撤销和过期。</p>
+      <div class="table-wrap"><table><thead><tr><th scope="col">操作</th><th scope="col">检查结果</th></tr></thead><tbody>
+        <tr><td>使用 A 发送零字节 POST，省略 Content-Type</td><td>HTTP 200、业务码 200、data 为 {}。查看该行只有 token_hash 被清空，原用户名和密码仍可登录。</td></tr>
+        <tr><td>用 A 再读取天体列表，再次退出；随后重新登录</td><td>前两次均为 20004；重新登录取得的新令牌可访问列表。</td></tr>
+        <tr><td>分别省略令牌、使用无效令牌、使用有效签发但已过期的令牌</td><td>依次返回 20004、20004、20003。其他有效会话仍可用。</td></tr>
+        <tr><td>让 A 的退出通过入口鉴权后暂停；等同一账号登录 B 成功再恢复</td><td>A 返回 20004，B 请求天体列表返回 200。再用同一有效令牌发起两次并发退出，应恰好有一次成功。</td></tr>
+        <tr><td>在入口鉴权与锁行之间删除测试记录、清空摘要或将摘要换为损坏的非空值</td><td>缺行和空摘要为 20004，损坏摘要为 500；合法摘要仅大小写不同仍匹配成功。</td></tr>
+        <tr><td>注入更新失败，或在 UPDATE 执行后、提交前注入失败</td><td>返回 10201，确认事务已回滚后，用 A 仍可访问。另测提交结果未知或响应丢失时的本机退出提示。</td></tr>
+        <tr><td>回归改密接口</td><td>有效会话输入错误原密码仍得 20006。改密成功后，A 再请求登出得到 20004。用 A 同时提交有效改密和登出，只能有一个请求成功。</td></tr>
+      </tbody></table></div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

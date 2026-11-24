@@ -149,15 +149,9 @@ func (a *Admin) ChangePassword(ctx context.Context, sessionDigest, currentPasswo
 		return err
 	}
 
-	if locked.TokenHash == "" {
-		return AdminSessionChangedErr
-	}
-	sessionMatches, err := auth.MatchSHA256Digest(sessionDigest, locked.TokenHash)
+	err = locked.checkSessionDigest(sessionDigest)
 	if err != nil {
 		return err
-	}
-	if !sessionMatches {
-		return AdminSessionChangedErr
 	}
 	passwordMatches, err := auth.MatchSHA256Digest(currentPasswordDigest, locked.PasswordHash)
 	if err != nil {
@@ -178,4 +172,63 @@ func (a *Admin) ChangePassword(ctx context.Context, sessionDigest, currentPasswo
 		return errors.New("administrator password update did not affect exactly one row")
 	}
 	return tx.Commit().Error
+}
+
+// RevokeSession 锁定当前管理员, 仅撤销与本次请求摘要匹配的会话.
+func (a *Admin) RevokeSession(ctx context.Context, sessionDigest [sha256.Size]byte) error {
+	if a == nil || a.ID <= 0 {
+		return errors.New("model.Admin.RevokeSession: missing administrator ID")
+	}
+	if ctx == nil {
+		return errors.New("model.Admin.RevokeSession: nil context")
+	}
+	if db.DB == nil {
+		return errors.New("database is not initialized")
+	}
+
+	tx := db.DB.WithContext(ctx).Begin(&sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
+
+	var locked Admin
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id", "token_hash").
+		Where("id = ?", a.ID).Take(&locked).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return AdminNotFoundErr
+	}
+	if err != nil {
+		return err
+	}
+	err = locked.checkSessionDigest(sessionDigest)
+	if err != nil {
+		return err
+	}
+
+	// locked.ID 来自锁定查询, Update 显式写入空字符串.
+	result := tx.Model(&locked).Update("token_hash", "")
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("administrator logout did not affect exactly one row")
+	}
+	return tx.Commit().Error
+}
+
+// checkSessionDigest 核对已读行保存的令牌摘要, 供持有行锁的写事务使用.
+func (a *Admin) checkSessionDigest(sessionDigest [sha256.Size]byte) error {
+	if a.TokenHash == "" {
+		return AdminSessionChangedErr
+	}
+	matched, err := auth.MatchSHA256Digest(sessionDigest, a.TokenHash)
+	if err != nil {
+		return err
+	}
+	if !matched {
+		return AdminSessionChangedErr
+	}
+	return nil
 }

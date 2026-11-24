@@ -107,3 +107,34 @@ func ChangePassword(c *gin.Context) {
 	respBody.Success(map[string]any{})
 	c.JSON(http.StatusOK, respBody)
 }
+
+// Logout 使用当前鉴权上下文执行登出, 各业务分支都返回空 data 对象.
+func Logout(c *gin.Context) {
+	respBody := &resp_body.RespBody{}
+	adminID, hasID := middleware.CurrentAdminID(c)
+	sessionDigest, hasDigest := middleware.CurrentAdminTokenDigest(c)
+	if !hasID || !hasDigest {
+		respBody.InvalidToken()
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	administrator := &biz.Admin{ID: adminID}
+	err := administrator.Logout(c.Request.Context(), sessionDigest)
+	if err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, auth.InvalidTokenErr):
+			respBody.InvalidToken()
+		case errors.As(err, &dbErr):
+			respBody.DBError(dbErr)
+		default:
+			respBody.InternalError(&sys_error.InternalError{Cause: err})
+		}
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	respBody.Success(map[string]any{})
+	c.JSON(http.StatusOK, respBody)
+}
