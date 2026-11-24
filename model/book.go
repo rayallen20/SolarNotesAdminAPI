@@ -19,6 +19,9 @@ var BookOrderInvalidErr = errors.New("cannot append to book order")
 // BookNotFoundErr 本错误表示表示给定的书籍不存在
 var BookNotFoundErr = errors.New("book not found")
 
+// BookEditChangedErr 表示锁定记录的标题或显隐与编辑快照不一致.
+var BookEditChangedErr = errors.New("book edit snapshot has changed")
+
 // Book 本结构体用于映射 book 表,只包含本次创建书籍所需的字段.
 type Book struct {
 	ID            int64   `gorm:"column:id;primaryKey;autoIncrement:false"` // ID 书籍ID
@@ -120,6 +123,61 @@ func (b *Book) insertWithPlanet(tx *gorm.DB) error {
 	}
 
 	b.Planet = planet
+	return nil
+}
+
+// Update 核对编辑快照后写入接收者的目标标题和显隐, 提交成功后回填已保存的书籍记录.
+func (b *Book) Update(ctx context.Context, expectedTitle, expectedDisplayStatus string) error {
+	if b == nil || ctx == nil {
+		return errors.New("model.Book.Update: missing book or context")
+	}
+	if b.ID <= 0 {
+		return errors.New("model.Book.Update: book ID must be positive")
+	}
+	if db.DB == nil {
+		return errors.New("database is not initialized")
+	}
+
+	tx := db.DB.WithContext(ctx).Begin(&sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
+
+	var current Book
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id", "planet_id", "title", "sort", "display_status").
+		Where("id = ?", b.ID).Take(&current).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return BookNotFoundErr
+	}
+	if err != nil {
+		return err
+	}
+	if current.Title != expectedTitle || current.DisplayStatus != expectedDisplayStatus {
+		return BookEditChangedErr
+	}
+
+	if current.Title != b.Title || current.DisplayStatus != b.DisplayStatus {
+		result := tx.Model(&current).Updates(map[string]any{
+			"title":          b.Title,
+			"display_status": b.DisplayStatus,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("book %d edit affected %d rows", b.ID, result.RowsAffected)
+		}
+		current.Title = b.Title
+		current.DisplayStatus = b.DisplayStatus
+	}
+
+	err = tx.Commit().Error
+	if err != nil {
+		return err
+	}
+	*b = current
 	return nil
 }
 

@@ -54,6 +54,51 @@ func (b *Book) Create(ctx context.Context, req *reqBook.CreateReq) error {
 	return nil
 }
 
+// Update 编辑书籍并在提交成功后将书籍摘要填入接收者.
+func (b *Book) Update(ctx context.Context, req *reqBook.UpdateReq) error {
+	if b == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Book.Update: nil receiver")}
+	}
+	if ctx == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Book.Update: nil context")}
+	}
+	if req == nil || req.Book == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Book.Update: missing book request")}
+	}
+	input := req.Book
+	if input.Expected == nil || input.Expected.Title == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Book.Update: missing expected book values")}
+	}
+	if input.Target == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Book.Update: missing target book values")}
+	}
+
+	record := &model.Book{
+		ID:            input.ID,
+		Title:         string(input.Target.Title),
+		DisplayStatus: input.Target.DisplayStatus,
+	}
+	err := record.Update(ctx, *input.Expected.Title, input.Expected.DisplayStatus)
+	if err != nil {
+		switch {
+		case errors.Is(err, model.BookNotFoundErr):
+			return sys_error.BookNotFoundErr
+		case errors.Is(err, model.BookEditChangedErr):
+			return sys_error.BookEditChangedErr
+		default:
+			return &sys_error.DatabaseError{Cause: err}
+		}
+	}
+
+	*b = Book{
+		ID:            record.ID,
+		Title:         record.Title,
+		Sort:          record.Sort,
+		DisplayStatus: record.DisplayStatus,
+	}
+	return nil
+}
+
 // fillByORM 本函数用于将书籍记录及其已加载的所属天体填入业务实体
 func (b *Book) fillByORM(ctx context.Context, record *model.Book) {
 	planet := &Planet{Exist: true}

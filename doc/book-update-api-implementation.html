@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Solar Notes 管理后台编辑书籍接口的请求与响应、Go 分层实现、并发处理和联调验收。">
+  <title>编辑书籍标题与显隐 · Solar Notes API 实现文档</title>
+  <style>
+    :root { color-scheme: light; --ink: #192f29; --muted: #4d6359; --green: #205e49; --line: #cad9cf; --soft: #e7f1e9; --mono: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f7f9f6; color: var(--ink); font: 16px/1.8 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .page { max-width: 75rem; margin: auto; padding: 3rem 2rem 5rem; display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 3.5rem; }
+    aside { position: sticky; top: 2rem; align-self: start; }
+    nav { display: grid; margin-top: .8rem; border-left: 2px solid var(--line); }
+    a { color: var(--green); text-underline-offset: .2em; }
+    nav a { padding: .25rem .8rem; text-decoration: none; }
+    nav a:hover, nav a:focus-visible { background: var(--soft); text-decoration: underline; }
+    :focus-visible { outline: 3px solid #2870a4; outline-offset: 3px; }
+    main { min-width: 0; } header { padding-bottom: 1rem; border-bottom: 1px solid var(--line); }
+    .endpoint { color: var(--green); font: 650 1rem/1.5 var(--mono); }
+    h1 { font-size: clamp(2rem, 4vw, 3rem); line-height: 1.2; margin: .55rem 0 1rem; }
+    h2 { font-size: 1.55rem; line-height: 1.4; margin: 0 0 .5rem; } h3 { font-size: 1.12rem; margin: 1.3rem 0 .35rem; }
+    p { margin: .55rem 0 .85rem; } header p, .sources { color: var(--muted); }
+    section { margin-top: 2.5rem; scroll-margin-top: 1.25rem; }
+    .examples { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    figure { margin: .7rem 0; min-width: 0; }
+    figcaption { padding: .5rem .8rem; font-weight: 650; background: var(--soft); border-radius: .45rem .45rem 0 0; }
+    pre { margin: 0; padding: .85rem 1rem; overflow-x: auto; border-radius: 0 0 .45rem .45rem; background: #17342b; color: #f2f7f0; font: .85rem/1.65 var(--mono); tab-size: 4; }
+    pre code { font: inherit; } :not(pre) > code { padding: .06em .25em; border-radius: .22em; background: var(--soft); font: .9em var(--mono); overflow-wrap: anywhere; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: .45rem; }
+    table { width: 100%; border-collapse: collapse; background: white; font-size: .95rem; }
+    th, td { text-align: left; vertical-align: top; padding: .55rem .75rem; border-bottom: 1px solid var(--line); }
+    thead { background: var(--soft); } tbody tr:last-child td { border-bottom: none; }
+    ol, ul { padding-left: 1.55rem; } li + li { margin-top: .45rem; }
+    @media (max-width: 54rem) { .page { display: block; padding: 1.25rem 1rem 3rem; } aside { position: static; margin-bottom: 1.6rem; } nav { display: flex; flex-wrap: wrap; border: none; gap: .2rem .9rem; } nav a { padding: 0; } }
+    @media (max-width: 42rem) { .examples { grid-template-columns: 1fr; gap: 0; } th, td { padding: .5rem; } }
+    @media print { body { background: white; } .page { display: block; padding: 0; } aside { display: none; } .examples { display: block; } .table-wrap { overflow: visible; } pre { white-space: pre-wrap; overflow-wrap: anywhere; color: black; background: white; } h2, h3, figcaption { break-after: avoid; } tr { break-inside: avoid; } }
+    details { margin: .9rem 0 1.3rem; } summary { color: var(--green); cursor: pointer; font-weight: 650; }
+    details figure { margin-top: .4rem; } tbody th { font-weight: 600; } .sources a { display: inline-block; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <aside>
+    <strong>Solar Notes · 管理 API</strong>
+    <nav aria-label="文档目录">
+      <a href="#contract">请求与响应</a><a href="#binding">快照与目标的校验</a><a href="#transaction">锁定并更新书籍</a>
+      <a href="#business">业务层与错误</a><a href="#http">控制器与路由</a><a href="#verify">联调验收</a>
+    </nav>
+  </aside>
+  <main>
+    <header>
+      <div class="endpoint">POST /v1/book/update</div>
+      <h1>编辑一本书的标题与显隐</h1>
+      <p>管理员打开某本书的编辑抽屉，修改标题或显示状态，再点击保存。服务端按书籍 ID 锁定这本书，核对打开抽屉时的两个原值，再保存目标值。书序由调序接口管理，书内各级目录沿用各自的显隐状态。</p>
+      <p class="sources"><a href="../../SolarNotesAdmin/doc/book-management-prototype.html#book-dialog">书籍编辑抽屉原型</a> · <a href="../../SolarNotesAdmin/doc/book-management-api-design.html#update">前后端编辑契约</a> · <a href="book-create-append-design.html">创建书籍的字段约定</a></p>
+    </header>
+
+    <section id="contract">
+      <h2>请求与响应</h2>
+      <p>沿用管理员 Bearer 鉴权，POST 请求使用 <code>application/json</code>。<code>book.id</code> 是正 <code>int64</code> 的十进制字符串，同名书以 ID 区分。前端分别保存打开抽屉时的原值 <code>expected</code> 和表单草稿 <code>target</code>。只改其中一项时，另一项也要随两个对象完整提交。取消编辑直接关闭抽屉。</p>
+      <div class="examples">
+        <figure><figcaption>请求 · 将选中的书改名并隐藏</figcaption><pre><code data-lang="json">{
+  "book": {
+    "id": "5000000000000000001",
+    "expected": {
+      "title": "数据库索引设计",
+      "display_status": "visible"
+    },
+    "target": {
+      "title": "数据库索引设计笔记",
+      "display_status": "hidden"
+    }
+  }
+}</code></pre></figure>
+        <figure><figcaption>成功 · HTTP 200</figcaption><pre><code data-lang="json">{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "book": {
+      "id": "5000000000000000001",
+      "title": "数据库索引设计笔记",
+      "sort": 3,
+      "display_status": "hidden"
+    }
+  }
+}</code></pre></figure>
+      </div>
+      <p><code>data.book</code> 使用现有 <code>book/options</code> 的单本摘要结构。页面按字符串 ID 替换对应行并更新显隐统计。如果返回的 <code>sort</code> 与本地列表不同，重新加载该天体的完整书单，以同步其他行的顺序。<a href="../param/resp/v1/book/options.go">书籍摘要 DTO</a></p>
+    </section>
+
+    <section id="binding">
+      <h2>快照与目标使用不同的书名校验</h2>
+      <div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">绑定规则</th><th scope="col">作用</th></tr></thead><tbody>
+        <tr><td><code>book</code>、<code>expected</code>、<code>target</code></td><td>必填对象，缺失或 <code>null</code> 返回 <code>10101</code>。</td><td>缺少快照或目标时无法完成核对。</td></tr>
+        <tr><td><code>expected.title</code></td><td>必填 JSON 字符串，保留原文。用 <code>*string</code> 区分显式空串和缺失。</td><td>允许提交实际读到的历史值，例如带首尾空白、超过 20 个码点或空串的标题，以便管理员修正它。</td></tr>
+        <tr><td><code>target.title</code></td><td>复用请求包已有的 <code>Title</code>。按 <code>jstext.TrimSpace</code> 修整首尾后接受 1 至 20 个 Unicode 码点。</td><td>保存规范化后的书名，允许与另一本书同名。</td></tr>
+        <tr><td>两个 <code>display_status</code></td><td>均必填且精确取 <code>visible</code> 或 <code>hidden</code>。</td><td>原值参与冲突判断，目标值只控制书籍自身。</td></tr>
+      </tbody></table></div>
+      <p>例如数据库存着 <code>" Go "</code>，抽屉应将含空格的原文发在 <code>expected.title</code> 中。提交目标 <code>" Go "</code> 时，后端将它修整为 <code>"Go"</code> 并保存。两个字段若都绑定到现有的 <code>Title</code>，即使没人编辑也会误判冲突。<a href="../param/req/v1/book/create.go">已有的 Title 实现</a></p>
+      <figure><figcaption>新增请求类型 · <code>param/req/v1/book/update.go</code></figcaption><pre><code data-lang="go" data-mode="new" data-file="param/req/v1/book/update.go">package book
+
+// UpdateReq 是管理员编辑书籍的请求.
+type UpdateReq struct {
+	Book *UpdateBookReq `json:"book" binding:"required"` // Book 引用书籍并携带编辑前后的值.
+}
+
+// UpdateBookReq 用 ID 定位书籍, 用 Expected 核对编辑时看到的记录.
+type UpdateBookReq struct {
+	ID       int64               `json:"id,string" binding:"gt=0"`    // ID 是十进制字符串形式的书籍 ID.
+	Expected *ExpectedBookFields `json:"expected" binding:"required"` // Expected 是打开抽屉时的原值.
+	Target   *TargetBookFields   `json:"target" binding:"required"`   // Target 是要保存的两个字段.
+}
+
+// ExpectedBookFields 保留读取时的书名原文.
+type ExpectedBookFields struct {
+	Title         *string `json:"title" binding:"required"`                               // Title 用指针区分空字符串与缺失.
+	DisplayStatus string  `json:"display_status" binding:"required,oneof=visible hidden"` // DisplayStatus 是原显隐状态.
+}
+
+// TargetBookFields 采用创建书籍时的书名与显隐规则.
+type TargetBookFields struct {
+	Title         Title  `json:"title" binding:"required,max=20"`                        // Title 在校验前修整首尾空白.
+	DisplayStatus string `json:"display_status" binding:"required,oneof=visible hidden"` // DisplayStatus 是目标显隐状态.
+}</code></pre></figure>
+    </section>
+
+    <section id="transaction">
+      <h2>锁定单本书，核对快照后写入</h2>
+      <p>在 <code>model/book.go</code> 为现有 <code>model.Book</code> 增加 <code>Update</code>。接收者携带主键和目标值，两个参数携带原始标题和显隐。通过主键 <code>SELECT ... FOR UPDATE</code> 读取最新记录并持锁到事务结束，所有读写使用同一 <code>tx</code>。</p>
+      <div class="table-wrap"><table><thead><tr><th scope="col">取得书籍行锁后的情况</th><th scope="col">处理结果</th></tr></thead><tbody>
+        <tr><td>查无此书</td><td>返回已有的 <code>BookNotFoundErr</code>，映射为 <code>20202</code>。</td></tr>
+        <tr><td>当前标题或显隐与 <code>expected</code> 不符</td><td>返回 <code>20204</code>，整次操作回滚。即使当前值恰好等于 <code>target</code>，也要先报告原快照失效。</td></tr>
+        <tr><td>快照匹配，目标与当前值相同</td><td>跳过 SQL 更新，提交事务并返回锁定时读取的书籍摘要。</td></tr>
+        <tr><td>快照匹配，标题或显隐有变化</td><td>显式写 <code>title</code> 与 <code>display_status</code> 两列并检查影响一行，提交成功后回填模型。</td></tr>
+      </tbody></table></div>
+      <p>标题在 Go 中逐字节比较，大小写、首尾空格及 Unicode 组合形式都会保留差异。这样冲突判断独立于 MySQL 列的排序规则。调序只改变 <code>sort</code>，它不参与快照比较。若调序已先提交，编辑将读到新的 <code>sort</code> 并随摘要返回。整个编辑事务只需锁这本书，既无需锁天体，也无需查询或更新 <code>catalogue</code>。</p>
+      <details open><summary>查看模型方法与事务代码</summary><figure><figcaption>追加到现有模型文件 · <code>model/book.go</code></figcaption><pre><code data-lang="go" data-mode="append" data-file="model/book.go">// BookEditChangedErr 表示锁定记录的标题或显隐与编辑快照不一致.
+var BookEditChangedErr = errors.New("book edit snapshot has changed")
+
+// Update 核对编辑快照后写入接收者的目标标题和显隐, 提交成功后回填已保存的书籍记录.
+func (b *Book) Update(ctx context.Context, expectedTitle, expectedDisplayStatus string) error {
+	if b == nil || ctx == nil {
+		return errors.New("model.Book.Update: missing book or context")
+	}
+	if b.ID &lt;= 0 {
+		return errors.New("model.Book.Update: book ID must be positive")
+	}
+	if db.DB == nil {
+		return errors.New("database is not initialized")
+	}
+
+	tx := db.DB.WithContext(ctx).Begin(&amp;sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
+
+	var current Book
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id", "planet_id", "title", "sort", "display_status").
+		Where("id = ?", b.ID).Take(&amp;current).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return BookNotFoundErr
+	}
+	if err != nil {
+		return err
+	}
+	if current.Title != expectedTitle || current.DisplayStatus != expectedDisplayStatus {
+		return BookEditChangedErr
+	}
+
+	if current.Title != b.Title || current.DisplayStatus != b.DisplayStatus {
+		result := tx.Model(&amp;current).Updates(map[string]any{
+			"title":          b.Title,
+			"display_status": b.DisplayStatus,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("book %d edit affected %d rows", b.ID, result.RowsAffected)
+		}
+		current.Title = b.Title
+		current.DisplayStatus = b.DisplayStatus
+	}
+
+	err = tx.Commit().Error
+	if err != nil {
+		return err
+	}
+	*b = current
+	return nil
+}</code></pre></figure></details>
+      <p>事务中将最新数据读入局部变量 <code>current</code>。只有 <code>Commit()</code> 成功后才写回接收者，因此查询、更新及提交错误均可沿错误链返回。该实现使用现有列和主键，无需调整数据库结构。</p>
+    </section>
+
+    <section id="business">
+      <h2>业务层接收完整请求，提交后回填摘要</h2>
+      <p><code>biz.Book.Update(ctx, req) error</code> 接收完整请求，把原值和目标值交给模型。成功后回填 <code>ID</code>、<code>Title</code>、<code>Sort</code> 和 <code>DisplayStatus</code>。本次查询只读取书籍行，直接映射这四个字段即可。现有 <code>fillByORM</code> 还会访问 <code>record.Planet</code>，适用于已加载天体的创建及分页列表场景。<a href="../biz/book.go">现有业务实体与回填方法</a></p>
+      <figure><figcaption>新增业务错误 · <code>sys_error/book_error.go</code></figcaption><pre><code data-lang="go" data-mode="append" data-file="sys_error/book_error.go">// BookEditChangedErr 提示管理员刷新书单并重新核对编辑内容.
+var BookEditChangedErr = errors.New("书籍标题或显示状态已变化,请刷新书单后重新确认")</code></pre></figure>
+      <details open><summary>查看业务入口及错误映射</summary><figure><figcaption>追加到书籍业务实体文件 · <code>biz/book.go</code></figcaption><pre><code data-lang="go" data-mode="append" data-file="biz/book.go">// Update 编辑书籍并在提交成功后将书籍摘要填入接收者.
+func (b *Book) Update(ctx context.Context, req *reqBook.UpdateReq) error {
+	if b == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Book.Update: nil receiver")}
+	}
+	if ctx == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Book.Update: nil context")}
+	}
+	if req == nil || req.Book == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Book.Update: missing book request")}
+	}
+	input := req.Book
+	if input.Expected == nil || input.Expected.Title == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Book.Update: missing expected book values")}
+	}
+	if input.Target == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Book.Update: missing target book values")}
+	}
+
+	record := &amp;model.Book{
+		ID:            input.ID,
+		Title:         string(input.Target.Title),
+		DisplayStatus: input.Target.DisplayStatus,
+	}
+	err := record.Update(ctx, *input.Expected.Title, input.Expected.DisplayStatus)
+	if err != nil {
+		switch {
+		case errors.Is(err, model.BookNotFoundErr):
+			return sys_error.BookNotFoundErr
+		case errors.Is(err, model.BookEditChangedErr):
+			return sys_error.BookEditChangedErr
+		default:
+			return &amp;sys_error.DatabaseError{Cause: err}
+		}
+	}
+
+	*b = Book{
+		ID:            record.ID,
+		Title:         record.Title,
+		Sort:          record.Sort,
+		DisplayStatus: record.DisplayStatus,
+	}
+	return nil
+}</code></pre></figure></details>
+    </section>
+
+    <section id="http">
+      <h2>控制器组装摘要，并注册鉴权路由</h2>
+      <p>在现有 <code>controller/v1/book/book.go</code> 中增加 <code>Update</code>。控制器用 <code>ShouldBindJSON</code> 绑定请求，调用业务方法，再用 <code>respBook.OptionResp</code> 构造 <code>data.book</code>。这些片段沿用各现有文件的导入。路由放在受全局鉴权中间件保护的 <code>v1</code> 路由组中。</p>
+      <figure><figcaption>在统一响应包装器中定义编辑冲突 · <code>resp_body/resp_body.go</code></figcaption><pre><code data-lang="go" data-mode="append" data-file="resp_body/resp_body.go">// BookEditChangedCode 表示书籍的编辑快照已失效.
+const BookEditChangedCode = 20204
+
+// BookEditChangedError 返回书籍编辑冲突以及空的 data 对象.
+func (r *RespBody) BookEditChangedError() {
+	r.failure(BookEditChangedCode, sys_error.BookEditChangedErr.Error())
+}</code></pre></figure>
+      <details open><summary>查看控制器方法</summary><figure><figcaption>追加到现有书籍控制器 · <code>controller/v1/book/book.go</code></figcaption><pre><code data-lang="go" data-mode="append" data-file="controller/v1/book/book.go">// Update 绑定编辑请求并返回已保存的书籍摘要.
+func Update(c *gin.Context) {
+	req := &amp;reqBook.UpdateReq{}
+	respBody := &amp;resp_body.RespBody{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		respBody.ValidateError(err)
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	var item biz.Book
+	err := item.Update(c.Request.Context(), req)
+	if err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, sys_error.BookNotFoundErr):
+			respBody.BookNotFoundError()
+		case errors.Is(err, sys_error.BookEditChangedErr):
+			respBody.BookEditChangedError()
+		case errors.As(err, &amp;dbErr):
+			respBody.DBError(dbErr)
+		default:
+			respBody.InternalError(err)
+		}
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	summary := respBook.OptionResp{
+		ID:            strconv.FormatInt(item.ID, 10),
+		Title:         item.Title,
+		Sort:          item.Sort,
+		DisplayStatus: item.DisplayStatus,
+	}
+	respBody.Success(map[string]any{"book": summary})
+	c.JSON(http.StatusOK, respBody)
+}</code></pre></figure></details>
+      <figure><figcaption>在 newRouter 的 book/create 之后注册 · <code>main.go</code></figcaption><pre><code data-lang="go" data-mode="route" data-file="main.go">v1.POST("/book/update", book.Update)</code></pre></figure>
+      <div class="table-wrap"><table><thead><tr><th scope="col">业务码</th><th scope="col">前端处理</th></tr></thead><tbody>
+        <tr><td><code>10101</code></td><td>请求字段无效。保留表单，让管理员修正。</td></tr>
+        <tr><td><code>20202</code></td><td>书籍已被删除。结束该条编辑，刷新当前天体书单。</td></tr>
+        <tr><td><code>20204</code> · <code>BOOK_EDIT_CHANGED</code></td><td>编辑原值已变化。保留用户草稿，重新读取 <code>book/options</code> 并展示差异，确认后基于最新原值再提交。前端在 <code>API_CODE</code> 中登记该业务码。</td></tr>
+        <tr><td><code>20003</code>、<code>20004</code></td><td>令牌过期或无效，交给现有鉴权流程。</td></tr>
+        <tr><td><code>10201</code>、<code>500</code></td><td>数据库或内部错误。若连接中断或提交结果未知，重新读取书单核对结果再决定是否重提。</td></tr>
+      </tbody></table></div>
+      <p>已处理的业务结果沿用 HTTP 200，失败时 <code>data</code> 始终为空对象。<code>20203</code> 留给后续书序冲突。下面是两名管理员编辑同一本书时，后提交的一方可能收到的响应。</p>
+      <figure><figcaption>示例 · 编辑快照已失效</figcaption><pre><code data-lang="json">{
+  "code": 20204,
+  "message": "书籍标题或显示状态已变化,请刷新书单后重新确认",
+  "data": {}
+}</code></pre></figure>
+    </section>
+
+    <section id="verify">
+      <h2>联调验收</h2>
+      <p>先调用 <code>POST /v1/book/options</code> 取得测试天体的书单，保存目标行的字符串 ID、原标题、显隐和序号。每个成功用例均核对响应的四个字段，并再次读取书单确认持久化结果。</p>
+      <div class="table-wrap"><table><thead><tr><th scope="col">操作</th><th scope="col">预期</th></tr></thead><tbody>
+        <tr><td>选择两本同名书中的一本，分别尝试只改标题、只改显隐和同时修改</td><td>仅匹配 ID 的书被编辑。显隐可双向切换，书序与所属天体保持原值，目录树中各节点原有状态保留。</td></tr>
+        <tr><td>目标标题修整后为 20 或 21 个码点，或只有空白。再试缺失对象、非法枚举、裸数字 ID</td><td>20 个码点可保存，其余无效输入均为 <code>10101</code>。快照中缺失或为 <code>null</code> 的标题也为 <code>10101</code>。</td></tr>
+        <tr><td>库中原标题带首尾空白或超过 20 个码点，目标标题合法</td><td>提交准确原文可以修正旧值。若原快照误删空白或只改了大小写，返回 <code>20204</code>。</td></tr>
+        <tr><td>两个管理员基于同一快照，一个改名，另一个改显隐</td><td>先提交的改动生效。另一方取得锁后发现原值不符，返回 <code>20204</code>。两个字段按整份快照校验，已提交的改动得到保留。</td></tr>
+        <tr><td>使用最新快照原样保存，再用已失效的快照请求相同的目标值</td><td>前者 <code>200</code> 并返回摘要，后者 <code>20204</code>。可用两个独立请求复核先核对、后判断是否需要更新的顺序。</td></tr>
+        <tr><td>打开抽屉后只有书序变动，再保存标题</td><td>返回 <code>200</code> 及更新后的序号，书序得到保留。在测试库可用已提交的书序变动模拟后续调序接口。</td></tr>
+        <tr><td>目标书被删除，或请求使用缺失、过期的令牌</td><td>有效请求引用已删除的书返回 <code>20202</code>。鉴权失败由中间件提前处理。</td></tr>
+      </tbody></table></div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

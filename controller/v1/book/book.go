@@ -49,6 +49,44 @@ func Create(c *gin.Context) {
 	c.JSON(http.StatusOK, respBody)
 }
 
+// Update 绑定编辑请求并返回已保存的书籍摘要.
+func Update(c *gin.Context) {
+	req := &reqBook.UpdateReq{}
+	respBody := &resp_body.RespBody{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		respBody.ValidateError(err)
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	var item biz.Book
+	err := item.Update(c.Request.Context(), req)
+	if err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, sys_error.BookNotFoundErr):
+			respBody.BookNotFoundError()
+		case errors.Is(err, sys_error.BookEditChangedErr):
+			respBody.BookEditChangedError()
+		case errors.As(err, &dbErr):
+			respBody.DBError(dbErr)
+		default:
+			respBody.InternalError(err)
+		}
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	summary := respBook.OptionResp{
+		ID:            strconv.FormatInt(item.ID, 10),
+		Title:         item.Title,
+		Sort:          item.Sort,
+		DisplayStatus: item.DisplayStatus,
+	}
+	respBody.Success(map[string]any{"book": summary})
+	c.JSON(http.StatusOK, respBody)
+}
+
 // List 本函数用于分页查询书籍列表
 func List(c *gin.Context) {
 	req := &reqBook.ListReq{}
