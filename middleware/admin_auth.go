@@ -5,6 +5,7 @@ import (
 	"SolarNotesAdminAPI/biz"
 	"SolarNotesAdminAPI/resp_body"
 	"SolarNotesAdminAPI/sys_error"
+	"crypto/sha256"
 	"errors"
 	"net/http"
 	"strings"
@@ -88,8 +89,9 @@ func (a *AdminAuth) Handle(c *gin.Context) {
 		return
 	}
 
-	// 只保存确认后的身份 ID,不将密码摘要或原始 JWT 放入上下文
+	// 保存已验证的管理员 ID 和本次请求使用的令牌摘要.
 	c.Set(adminIDContextKey, administrator.ID)
+	c.Set(adminTokenDigestContextKey, sha256.Sum256([]byte(rawToken)))
 	c.Next()
 }
 

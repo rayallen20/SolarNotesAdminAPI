@@ -9,4 +9,6 @@ var (
 	InvalidCredentialsErr = errors.New("账号或密码错误")
 	// LoginStateChangedErr 本错误表示密码验证后,写入令牌的条件更新未命中
 	LoginStateChangedErr = errors.New("账号状态已变化,请重新登录")
+	// CurrentPasswordIncorrectErr 提示当前管理员重新输入原密码.
+	CurrentPasswordIncorrectErr = errors.New("原密码不正确")
 )

@@ -7,6 +7,7 @@ import (
 	reqAdmin "SolarNotesAdminAPI/param/req/v1/admin"
 	"SolarNotesAdminAPI/sys_error"
 	"context"
+	"crypto/sha256"
 	"errors"
 )
 
@@ -114,7 +115,7 @@ func (a *Admin) Authenticate(ctx context.Context, rawToken string) error {
 			Cause: errors.New("nil administrator entity"),
 		}
 	}
-	
+
 	a.flush(ctx)
 
 	if ctx == nil {
@@ -188,4 +189,35 @@ func (a *Admin) Authenticate(ctx context.Context, rawToken string) error {
 
 	a.fillByORM(ctx, record)
 	return nil
+}
+
+// ChangePassword 为接收者代表的已鉴权管理员修改密码并撤销原会话.
+func (a *Admin) ChangePassword(ctx context.Context, req *reqAdmin.ChangePasswordReq, sessionDigest [sha256.Size]byte) error {
+	if a == nil || a.ID <= 0 {
+		return &sys_error.InternalError{Cause: errors.New("missing authenticated administrator ID")}
+	}
+	if ctx == nil {
+		return &sys_error.InternalError{Cause: errors.New("nil password change context")}
+	}
+	if req == nil || req.Admin == nil {
+		return &sys_error.InternalError{Cause: errors.New("missing password change request")}
+	}
+
+	currentDigest := sha256.Sum256([]byte(req.Admin.CurrentPassword))
+	newDigest := sha256.Sum256([]byte(req.Admin.NewPassword))
+	record := &model.Admin{ID: a.ID}
+	err := record.ChangePassword(ctx, sessionDigest, currentDigest, newDigest)
+	if err == nil {
+		return nil
+	}
+	switch {
+	case errors.Is(err, model.AdminNotFoundErr), errors.Is(err, model.AdminSessionChangedErr):
+		return auth.InvalidTokenErr
+	case errors.Is(err, model.AdminPasswordMismatchErr):
+		return sys_error.CurrentPasswordIncorrectErr
+	case errors.Is(err, auth.InvalidHashErr):
+		return &sys_error.InternalError{Cause: err}
+	default:
+		return &sys_error.DatabaseError{Cause: err}
+	}
 }

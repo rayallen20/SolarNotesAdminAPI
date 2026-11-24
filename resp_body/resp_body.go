@@ -25,6 +25,8 @@ const (
 	InvalidTokenCode         = 20004 // InvalidTokenCode token无效状态码
 	LoginRateLimitCode       = 20005 // LoginRateLimitCode 请求登录接口触发访问频率限制状态码
 
+	CurrentPasswordIncorrectCode = 20006 // CurrentPasswordIncorrectCode 用于已鉴权管理员提供错误原密码的情况.
+
 	PlanetExistCode = 20101 // PlanetExistCode 请求创建的天体名称已经存在状态码
 
 	PlanetNotFoundCode     = 20102              // PlanetNotFoundCode 用于表示所选天体已不存在.
@@ -105,6 +107,11 @@ func (r *RespBody) TokenExpiredError() {
 // InvalidToken 本方法用于生成令牌无效或已撤销响应时的响应体
 func (r *RespBody) InvalidToken() {
 	r.failure(InvalidTokenCode, "登录状态无效,请重新登录")
+}
+
+// CurrentPasswordIncorrectError 设置原密码错误的固定提示及空 data 对象.
+func (r *RespBody) CurrentPasswordIncorrectError() {
+	r.failure(CurrentPasswordIncorrectCode, sys_error.CurrentPasswordIncorrectErr.Error())
 }
 
 // PlanetExistError 本方法用于生成天体名称重复时的响应体

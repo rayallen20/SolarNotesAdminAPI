@@ -1,15 +1,28 @@
 package model
 
 import (
-	"SolarNotesAdminAPI/db"
 	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
 	"errors"
 
+	"SolarNotesAdminAPI/auth"
+	"SolarNotesAdminAPI/db"
+
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // AdminNotFoundErr 本错误用于将数据库记录不存在转换为业务层可识别的错误
 var AdminNotFoundErr = errors.New("administrator not found")
+
+var (
+	// AdminSessionChangedErr 表示原会话已被撤销或替换.
+	AdminSessionChangedErr = errors.New("administrator session has changed")
+	// AdminPasswordMismatchErr 表示会话仍有效, 但原密码核验未通过.
+	AdminPasswordMismatchErr = errors.New("current administrator password does not match")
+)
 
 // Admin 本结构体用于和数据库中的admin表进行映射
 type Admin struct {
@@ -105,4 +118,64 @@ func (a *Admin) FindByID(ctx context.Context, id int64) error {
 
 	*a = *record
 	return nil
+}
+
+// ChangePassword 锁定接收者 ID 对应的行, 核对会话和原密码后同时写入两个字段.
+func (a *Admin) ChangePassword(ctx context.Context, sessionDigest, currentPasswordDigest, newPasswordDigest [sha256.Size]byte) error {
+	if a == nil || a.ID <= 0 {
+		return errors.New("model.Admin.ChangePassword: missing administrator ID")
+	}
+	if ctx == nil {
+		return errors.New("model.Admin.ChangePassword: nil context")
+	}
+	if db.DB == nil {
+		return errors.New("database is not initialized")
+	}
+
+	tx := db.DB.WithContext(ctx).Begin(&sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
+
+	var locked Admin
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id", "password_hash", "token_hash").
+		Where("id = ?", a.ID).Take(&locked).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return AdminNotFoundErr
+	}
+	if err != nil {
+		return err
+	}
+
+	if locked.TokenHash == "" {
+		return AdminSessionChangedErr
+	}
+	sessionMatches, err := auth.MatchSHA256Digest(sessionDigest, locked.TokenHash)
+	if err != nil {
+		return err
+	}
+	if !sessionMatches {
+		return AdminSessionChangedErr
+	}
+	passwordMatches, err := auth.MatchSHA256Digest(currentPasswordDigest, locked.PasswordHash)
+	if err != nil {
+		return err
+	}
+	if !passwordMatches {
+		return AdminPasswordMismatchErr
+	}
+
+	result := tx.Model(&locked).Updates(map[string]any{
+		"password_hash": hex.EncodeToString(newPasswordDigest[:]),
+		"token_hash":    "",
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("administrator password update did not affect exactly one row")
+	}
+	return tx.Commit().Error
 }

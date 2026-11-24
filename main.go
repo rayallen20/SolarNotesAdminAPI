@@ -119,6 +119,7 @@ func newRouter(serviceConf conf.Service) (*gin.Engine, error) {
 	v1 := router.Group(v1Prefix)
 	{
 		v1.POST(loginPath, admin.Login)
+		v1.POST("/admin/password/change", admin.ChangePassword)
 		v1.GET("/planet/status", planet.ShowStatus)
 		v1.POST("/planet/create", planet.Create)
 		v1.GET("/planet/list", planet.List)
