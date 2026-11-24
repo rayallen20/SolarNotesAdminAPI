@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="为 GET /v1/planet/status 增加九个必需天体的完整性摘要，包括响应示例、Go 实现与联调验收。">
+  <title>天体创建状态与完整性检测 · Solar Notes API</title>
+  <style>
+    :root { color-scheme: light; --ink: #20342d; --muted: #495f55; --green: #205d47; --rule: #c9d8cd; --soft: #e8f1ea; --mono: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f8faf7; color: var(--ink); font: 16px/1.75 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .page { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 3.2rem; max-width: 76rem; margin: auto; padding: 2.8rem 2rem 5rem; }
+    aside { position: sticky; top: 2rem; align-self: start; }
+    nav { display: grid; border-left: 2px solid var(--rule); margin-top: .75rem; }
+    a { color: var(--green); text-underline-offset: .2em; } nav a { padding: .25rem .8rem; text-decoration: none; } nav a:hover { text-decoration: underline; }
+    :focus-visible { outline: 3px solid #2673a1; outline-offset: 3px; }
+    main { min-width: 0; } header { border-bottom: 1px solid var(--rule); padding-bottom: 1rem; }
+    .route { font: 650 .99rem/1.5 var(--mono); color: var(--green); }
+    h1 { margin: .55rem 0 1rem; font-size: clamp(2rem, 4vw, 3.05rem); line-height: 1.2; }
+    h2 { margin: 0 0 .6rem; font-size: 1.55rem; line-height: 1.35; }
+    section { margin-top: 2.5rem; scroll-margin-top: 1.25rem; }
+    p { margin: .5rem 0 .85rem; } header p, .source { color: var(--muted); }
+    figure { margin: 1rem 0; } figcaption { background: var(--soft); padding: .45rem .85rem; border-radius: .4rem .4rem 0 0; font-weight: 650; }
+    pre { margin: 0; background: #18372c; color: #f4f8f4; padding: .85rem 1rem; border-radius: 0 0 .4rem .4rem; overflow-x: auto; tab-size: 4; font: .87rem/1.65 var(--mono); } pre code { font: inherit; }
+    :not(pre) > code { background: var(--soft); border-radius: .2rem; padding: .08em .25em; font: .9em var(--mono); overflow-wrap: anywhere; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: .4rem; }
+    table { border-collapse: collapse; width: 100%; background: white; font-size: .95rem; }
+    th, td { padding: .55rem .75rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+    th { background: var(--soft); } tbody tr:last-child td { border-bottom: 0; }
+    @media (max-width: 52rem) { .page { display: block; padding: 1.2rem 1rem 3rem; } aside { position: static; margin-bottom: 1.5rem; } nav { display: flex; flex-wrap: wrap; gap: .2rem .9rem; border: 0; } nav a { padding: 0; } }
+    @media print { body { background: white; } .page { display: block; padding: 0; } aside { display: none; } pre { white-space: pre-wrap; overflow-wrap: anywhere; background: white; color: black; } .table-wrap { overflow: visible; } h2, figcaption { break-after: avoid; } tr { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+<div class="page">
+  <aside>
+    <strong>Solar Notes · 管理 API</strong>
+    <nav aria-label="文档目录">
+      <a href="#contract">请求与响应</a>
+      <a href="#business">业务层汇总</a>
+      <a href="#dto">响应 DTO</a>
+      <a href="#controller">控制器组装</a>
+      <a href="#verify">联调与验收</a>
+    </nav>
+  </aside>
+  <main>
+    <header>
+      <div class="route">GET /v1/planet/status</div>
+      <h1>天体创建状态与完整性检测</h1>
+      <p>创建表单需要知道哪些天体还能补建，页面上的检测卡需要知道太阳和八颗行星是否齐全。这两个答案来自同一次天体查询。接口保留 <code>data.planets</code> 供表单使用，并在同一层新增 <code>data.readiness</code> 供检测卡使用。</p>
+      <p class="source"><a href="../../SolarNotesAdmin/doc/body-management-api-design.html#status">前后端接口约定</a> · <a href="../model/planet.go">现有查询 FindByNames</a> · <a href="../main.go">现有路由与管理员鉴权</a></p>
+    </header>
+
+    <section id="contract">
+      <h2>请求与响应</h2>
+      <p>沿用现有 GET 路由，请求头携带 <code>Authorization: Bearer &lt;access_token&gt;</code>，无需请求体或查询参数。成功时 HTTP 状态和业务码均为 <code>200</code>。每次都按 <code>biz.names</code> 的顺序返回九项，每项保留原有的 <code>name</code> 和布尔值 <code>exist</code>。</p>
+      <figure><figcaption>完整成功响应 · 缺少天王星和海王星</figcaption><pre><code id="partial-response" data-lang="json">{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "planets": [
+      {"name": "Sun",     "exist": true},
+      {"name": "Mercury", "exist": true},
+      {"name": "Venus",   "exist": true},
+      {"name": "Earth",   "exist": true},
+      {"name": "Mars",    "exist": true},
+      {"name": "Jupiter", "exist": true},
+      {"name": "Saturn",  "exist": true},
+      {"name": "Uranus",  "exist": false},
+      {"name": "Neptune", "exist": false}
+    ],
+    "readiness": {
+      "ready": false,
+      "required_count": 9,
+      "created_count": 7,
+      "missing_names": ["Uranus", "Neptune"]
+    }
+  }
+}</code></pre></figure>
+      <div class="table-wrap"><table>
+        <thead><tr><th scope="col">readiness 字段</th><th scope="col">取值规则</th></tr></thead>
+        <tbody>
+          <tr><td><code>ready</code></td><td>布尔值，缺失清单为空时为 <code>true</code>。</td></tr>
+          <tr><td><code>required_count</code></td><td>整数，取固定名称集合的长度，当前为 9。</td></tr>
+          <tr><td><code>created_count</code></td><td>整数，取九项明细中 <code>exist == true</code> 的项数。</td></tr>
+          <tr><td><code>missing_names</code></td><td>字符串数组，依次列出 <code>exist == false</code> 的名称。返回原始英文标识，页面可据此显示中文名称。</td></tr>
+        </tbody>
+      </table></div>
+      <figure><figcaption>九项齐全时的 data.readiness</figcaption><pre><code id="ready-summary" data-lang="json">{
+  "ready": true,
+  "required_count": 9,
+  "created_count": 9,
+  "missing_names": []
+}</code></pre></figure>
+    </section>
+
+    <section id="business">
+      <h2>业务层汇总一次查询的结果</h2>
+      <p>在 <a href="../biz/planet.go">biz/planet.go</a> 中添加 <code>PlanetStatus</code>，表示一次检测的整体结果。将 <code>(*Planet).ShowStatus</code> 的成功返回值从 <code>[]*Planet</code> 改为 <code>*PlanetStatus</code>。工程中该方法的调用方是本接口的控制器，现有 <code>names</code>、<code>fillByORM</code> 和文件导入均可复用。</p>
+      <p>用 <code>FindByNames(ctx, names[:])</code> 取一次候选记录，按返回的原始名称建立索引。随后遍历 <code>names</code>，每次匹配同时决定明细和摘要。即使 MySQL 的排序规则让 <code>sun</code> 进入查询结果，Go 字符串键也只会将 <code>Sun</code> 判为命中。历史额外名称不会占用任何必需天体的名额。</p>
+      <figure><figcaption>biz/planet.go · 在现有 ShowStatus 的位置添加类型并替换方法</figcaption><pre><code id="business-code" data-lang="go">// PlanetStatus 保存一次检测返回的逐项状态和完整性结论.
+type PlanetStatus struct {
+	Planets       []*Planet // Planets 按 names 顺序列出所有必需天体.
+	RequiredCount int       // RequiredCount 是固定名称集合的大小.
+	CreatedCount  int       // CreatedCount 是已创建的必需天体数量.
+	MissingNames  []string  // MissingNames 按 names 顺序列出缺失的名称.
+	Ready         bool      // Ready 表示所有必需天体均已创建.
+}
+
+// ShowStatus 查询必需天体, 并从本次查询的明细生成完整性摘要.
+func (p *Planet) ShowStatus(ctx context.Context) (*PlanetStatus, error) {
+	if p == nil {
+		return nil, &amp;sys_error.InternalError{Cause: errors.New("nil planet entity")}
+	}
+	if ctx == nil {
+		return nil, &amp;sys_error.InternalError{Cause: errors.New("nil planet status context")}
+	}
+
+	orm := &amp;model.Planet{}
+	records, err := orm.FindByNames(ctx, names[:])
+	if err != nil {
+		return nil, &amp;sys_error.DatabaseError{Cause: err}
+	}
+
+	recordsByName := make(map[string]*model.Planet, len(records))
+	for _, record := range records {
+		if record == nil {
+			return nil, &amp;sys_error.InternalError{Cause: errors.New("nil planet record")}
+		}
+		recordsByName[record.Name] = record
+	}
+
+	status := &amp;PlanetStatus{
+		Planets:       make([]*Planet, 0, len(names)),
+		RequiredCount: len(names),
+		MissingNames:  make([]string, 0, len(names)),
+	}
+	for _, name := range names {
+		record, exists := recordsByName[name]
+		item := &amp;Planet{Name: name, Exist: exists}
+		if exists {
+			item.fillByORM(ctx, record)
+			status.CreatedCount++
+		} else {
+			status.MissingNames = append(status.MissingNames, name)
+		}
+		status.Planets = append(status.Planets, item)
+	}
+
+	status.Ready = len(status.MissingNames) == 0
+	return status, nil
+}</code></pre></figure>
+      <p>空表查询成功时，上述循环仍会生成九条明细和九个缺失名称。查询出错则在生成摘要前返回错误，由控制器通知页面本次检测失败。天体检测只读取 <code>planet</code> 表现有字段，无需数据库迁移或额外的计数查询。</p>
+    </section>
+
+    <section id="dto">
+      <h2>为完整性摘要定义响应 DTO</h2>
+      <p>在 <a href="../param/resp/v1/planet/show_status.go">param/resp/v1/planet/show_status.go</a> 中扩展 <code>ShowStatusResp</code>。<code>Readiness</code> 使用值类型，四个字段始终参与序列化；业务层初始化的空切片让齐全时的 <code>missing_names</code> 编码为 <code>[]</code>。</p>
+      <figure><figcaption>param/resp/v1/planet/show_status.go · 完整文件</figcaption><pre><code id="dto-code" data-lang="go">package planet
+
+// ShowStatusResp 定义天体创建状态接口的成功数据.
+type ShowStatusResp struct {
+	Planets   []*ShowStatusPlanetResp `json:"planets"`   // Planets 供创建表单展示逐项状态.
+	Readiness ReadinessResp           `json:"readiness"` // Readiness 供检测卡展示完整性结论.
+}
+
+// ShowStatusPlanetResp 定义一个必需天体的状态.
+type ShowStatusPlanetResp struct {
+	Name  string `json:"name"`  // Name 是前后端约定的天体标识.
+	Exist bool   `json:"exist"` // Exist 表示库中存在同名天体.
+}
+
+// ReadinessResp 定义本次检测的摘要.
+type ReadinessResp struct {
+	Ready         bool     `json:"ready"`          // Ready 表示全部必需天体均已创建.
+	RequiredCount int      `json:"required_count"` // RequiredCount 是必需天体总数.
+	CreatedCount  int      `json:"created_count"`  // CreatedCount 是其中已创建的数量.
+	MissingNames  []string `json:"missing_names"`  // MissingNames 保存缺失标识, 齐全时为空数组.
+}</code></pre></figure>
+    </section>
+
+    <section id="controller">
+      <h2>控制器组装明细和摘要</h2>
+      <p>替换 <a href="../controller/v1/planet/planet.go">controller/v1/planet/planet.go</a> 中的 <code>ShowStatus</code>。控制器接收业务结论，组装响应 DTO，再按 <code>RespBody.Success(map[string]any)</code> 的现有签名传入两个同级字段。可沿用当前文件的导入。</p>
+      <figure><figcaption>controller/v1/planet/planet.go · 替换 ShowStatus</figcaption><pre><code id="controller-code" data-lang="go">// ShowStatus 返回天体创建状态及本次完整性检测摘要.
+func ShowStatus(c *gin.Context) {
+	respBody := &amp;resp_body.RespBody{}
+	planetBiz := &amp;biz.Planet{}
+	status, err := planetBiz.ShowStatus(c.Request.Context())
+	if err != nil {
+		var dbErr *sys_error.DatabaseError
+		if errors.As(err, &amp;dbErr) {
+			respBody.DBError(dbErr)
+		} else {
+			respBody.InternalError(err)
+		}
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	resp := respPlanet.ShowStatusResp{
+		Planets: make([]*respPlanet.ShowStatusPlanetResp, 0, len(status.Planets)),
+		Readiness: respPlanet.ReadinessResp{
+			Ready:         status.Ready,
+			RequiredCount: status.RequiredCount,
+			CreatedCount:  status.CreatedCount,
+			MissingNames:  status.MissingNames,
+		},
+	}
+	for _, item := range status.Planets {
+		resp.Planets = append(resp.Planets, &amp;respPlanet.ShowStatusPlanetResp{
+			Name:  item.Name,
+			Exist: item.Exist,
+		})
+	}
+
+	respBody.Success(map[string]any{
+		"planets":   resp.Planets,
+		"readiness": resp.Readiness,
+	})
+	c.JSON(http.StatusOK, respBody)
+}</code></pre></figure>
+      <p>天体查询失败沿用业务码 <code>10201</code>，内部异常沿用 <code>500</code>。管理员令牌过期或无效由鉴权中间件分别返回 <code>20003</code> 或 <code>20004</code>。这些错误响应均沿用 HTTP 200 和空对象 <code>data: {}</code>。前端先判断业务码，只有成功响应中的 <code>ready</code> 可以作为检测结论。</p>
+    </section>
+
+    <section id="verify">
+      <h2>联调与验收</h2>
+      <p>在 Postman 选择 GET，请求 <code>{{base_url}}/v1/planet/status</code>，在 Authorization 下选 Bearer Token 并填入已登录管理员的令牌。对每份成功响应核对三件事：明细长度等于 <code>required_count</code>，<code>created_count</code> 等于明细中已创建项的数量，按明细顺序取出所有未创建项的名称恰好等于 <code>missing_names</code>。</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th scope="col">在测试数据中准备的场景</th><th scope="col">预期结果</th></tr></thead>
+        <tbody>
+          <tr><td>天体表为空</td><td>业务码 200，九项均为 false，已创建 0/9；缺失清单按固定顺序从 Sun 到 Neptune。</td></tr>
+          <tr><td>仅缺 Uranus、Neptune</td><td>得到前文 7/9 完整示例。依次补建并复检，先变为 8/9 且只缺 Neptune，再变为 9/9。</td></tr>
+          <tr><td>九个名称齐全，插入顺序任意</td><td>九项依然按固定顺序返回，ready 为 true，missing_names 为 []。</td></tr>
+          <tr><td>九条记录中有八个必需天体，另一条是 Pluto</td><td>已创建 8/9。缺失项仍可补建，明细与缺失清单均只包含固定集合内的名称。</td></tr>
+          <tr><td>其余八项齐全，太阳的历史标识为小写 sun</td><td>已创建 8/9，Sun 的 exist 为 false，missing_names 仅有 "Sun"。</td></tr>
+          <tr><td>鉴权通过，但天体查询失败</td><td>业务码 10201，data 为 {}。页面显示检测失败，可单独重试 status；已加载的列表仍可展示。</td></tr>
+          <tr><td>缺少令牌或令牌已过期</td><td>缺少令牌返回 20004，已过期的有效签发令牌返回 20003。响应沿用公共鉴权包装。</td></tr>
+        </tbody>
+      </table></div>
+      <p>页面首次进入时可以并行获取 <code>list</code> 与 <code>status</code>。创建成功或遇到重名码 <code>20101</code> 后重新获取两份数据；单独重试检测时只请求 <code>status</code>。旧版请求层仍可只读取 <code>planets</code>，新版从同一份已解包的 <code>data</code> 中读取两项。若摘要缺失或与明细矛盾，页面应提示检测失败并允许重试。<a href="../../SolarNotesAdmin/src/api/body.js">现有前端天体请求</a></p>
+    </section>
+  </main>
+</div>
+</body>
+</html>

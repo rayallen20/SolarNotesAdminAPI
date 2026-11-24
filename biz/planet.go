@@ -31,21 +31,26 @@ type Planet struct {
 	Exist bool   // Exist 行星是否存在 (用于判定能否创建该天体)
 }
 
-// ShowStatus 本方法用于查询所有行星的状态,并返回一个包含行星状态的切片
-func (p *Planet) ShowStatus(ctx context.Context) ([]*Planet, error) {
-	if p == nil || ctx == nil {
-		return nil, &sys_error.InternalError{
-			Cause: errors.New("nil planet entity or context"),
-		}
-	}
+// PlanetStatus 保存一次检测返回的逐项状态和完整性结论.
+type PlanetStatus struct {
+	Planets       []*Planet // Planets 按 names 顺序列出所有必需天体.
+	RequiredCount int       // RequiredCount 是固定名称集合的大小.
+	CreatedCount  int       // CreatedCount 是已创建的必需天体数量.
+	MissingNames  []string  // MissingNames 按 names 顺序列出缺失的名称.
+	Ready         bool      // Ready 表示所有必需天体均已创建.
+}
 
-	planetNames := make([]string, 0, len(names))
-	for _, name := range names {
-		planetNames = append(planetNames, name)
+// ShowStatus 查询必需天体, 并从本次查询的明细生成完整性摘要.
+func (p *Planet) ShowStatus(ctx context.Context) (*PlanetStatus, error) {
+	if p == nil {
+		return nil, &sys_error.InternalError{Cause: errors.New("nil planet entity")}
+	}
+	if ctx == nil {
+		return nil, &sys_error.InternalError{Cause: errors.New("nil planet status context")}
 	}
 
 	orm := &model.Planet{}
-	records, err := orm.FindByNames(ctx, planetNames)
+	records, err := orm.FindByNames(ctx, names[:])
 	if err != nil {
 		return nil, &sys_error.DatabaseError{Cause: err}
 	}
@@ -53,31 +58,30 @@ func (p *Planet) ShowStatus(ctx context.Context) ([]*Planet, error) {
 	recordsByName := make(map[string]*model.Planet, len(records))
 	for _, record := range records {
 		if record == nil {
-			return nil, &sys_error.InternalError{
-				Cause: errors.New("nil planet record"),
-			}
+			return nil, &sys_error.InternalError{Cause: errors.New("nil planet record")}
 		}
-
 		recordsByName[record.Name] = record
 	}
 
-	planets := make([]*Planet, 0, len(recordsByName))
-	for _, name := range planetNames {
-		planet := &Planet{
-			Name:  name,
-			Exist: false,
-		}
-
+	status := &PlanetStatus{
+		Planets:       make([]*Planet, 0, len(names)),
+		RequiredCount: len(names),
+		MissingNames:  make([]string, 0, len(names)),
+	}
+	for _, name := range names {
 		record, exists := recordsByName[name]
+		item := &Planet{Name: name, Exist: exists}
 		if exists {
-			planet.fillByORM(ctx, record)
-			planet.Exist = true
+			item.fillByORM(ctx, record)
+			status.CreatedCount++
+		} else {
+			status.MissingNames = append(status.MissingNames, name)
 		}
-
-		planets = append(planets, planet)
+		status.Planets = append(status.Planets, item)
 	}
 
-	return planets, nil
+	status.Ready = len(status.MissingNames) == 0
+	return status, nil
 }
 
 // fillByORM 本方法用于将数据库查询结果填充到业务实体中

@@ -13,43 +13,42 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ShowStatus 本函数用于显示天体的可用状态信息
+// ShowStatus 返回天体创建状态及本次完整性检测摘要.
 func ShowStatus(c *gin.Context) {
 	respBody := &resp_body.RespBody{}
-
 	planetBiz := &biz.Planet{}
-	planets, err := planetBiz.ShowStatus(c.Request.Context())
+	status, err := planetBiz.ShowStatus(c.Request.Context())
 	if err != nil {
 		var dbErr *sys_error.DatabaseError
 		if errors.As(err, &dbErr) {
 			respBody.DBError(dbErr)
-			c.JSON(http.StatusOK, respBody)
-			return
+		} else {
+			respBody.InternalError(err)
 		}
-
-		respBody.InternalError(err)
 		c.JSON(http.StatusOK, respBody)
 		return
 	}
 
-	resp := &respPlanet.ShowStatusResp{
-		Planets: make([]*respPlanet.ShowStatusPlanetResp, 0, len(planets)),
+	resp := respPlanet.ShowStatusResp{
+		Planets: make([]*respPlanet.ShowStatusPlanetResp, 0, len(status.Planets)),
+		Readiness: respPlanet.ReadinessResp{
+			Ready:         status.Ready,
+			RequiredCount: status.RequiredCount,
+			CreatedCount:  status.CreatedCount,
+			MissingNames:  status.MissingNames,
+		},
 	}
-
-	for _, item := range planets {
-		planetResp := &respPlanet.ShowStatusPlanetResp{
+	for _, item := range status.Planets {
+		resp.Planets = append(resp.Planets, &respPlanet.ShowStatusPlanetResp{
 			Name:  item.Name,
 			Exist: item.Exist,
-		}
-
-		resp.Planets = append(resp.Planets, planetResp)
+		})
 	}
 
-	data := map[string]interface{}{
-		"planets": resp.Planets,
-	}
-	respBody.Success(data)
-
+	respBody.Success(map[string]any{
+		"planets":   resp.Planets,
+		"readiness": resp.Readiness,
+	})
 	c.JSON(http.StatusOK, respBody)
 }
 
