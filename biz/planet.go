@@ -162,6 +162,47 @@ func (p *Planet) Create(ctx context.Context, req *planet.CreateReq) error {
 	return nil
 }
 
+// Update 核对请求中的原文并保存天体, 提交成功后才填充业务实体.
+func (p *Planet) Update(ctx context.Context, req *planet.UpdateReq) error {
+	if p == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Planet.Update: nil receiver")}
+	}
+	if ctx == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Planet.Update: nil context")}
+	}
+	if req == nil || req.Planet == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Planet.Update: missing planet request")}
+	}
+	input := req.Planet
+	if input.Expected == nil || input.Expected.Title == nil || input.Expected.Intro == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Planet.Update: missing expected title or intro")}
+	}
+	if input.Target == nil {
+		return &sys_error.InternalError{Cause: errors.New("biz.Planet.Update: missing target fields")}
+	}
+
+	record := &model.Planet{
+		ID:    input.ID,
+		Title: string(input.Target.Title),
+		Intro: string(input.Target.Intro),
+	}
+	err := record.Update(ctx, *input.Expected.Title, *input.Expected.Intro)
+	if err != nil {
+		switch {
+		case errors.Is(err, model.PlanetNotFoundErr):
+			return sys_error.PlanetNotFoundErr
+		case errors.Is(err, model.PlanetEditChangedErr):
+			return sys_error.PlanetEditChangedErr
+		default:
+			return &sys_error.DatabaseError{Cause: err}
+		}
+	}
+
+	p.fillByORM(ctx, record)
+	p.Exist = true
+	return nil
+}
+
 // flush 本方法用于清空天体业务实体的所有字段,以防止实例复用导致的旧数据残留
 func (p *Planet) flush(ctx context.Context) {
 	p.ID = 0

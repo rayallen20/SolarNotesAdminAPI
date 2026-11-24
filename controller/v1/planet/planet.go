@@ -85,6 +85,45 @@ func Create(c *gin.Context) {
 	c.JSON(http.StatusOK, respBody)
 }
 
+// Update 绑定天体编辑请求, 返回与列表单行同形的已保存记录.
+func Update(c *gin.Context) {
+	req := &planet.UpdateReq{}
+	respBody := &resp_body.RespBody{}
+	err := c.ShouldBindJSON(req)
+	if err != nil {
+		respBody.ValidateError(err)
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	var item biz.Planet
+	err = item.Update(c.Request.Context(), req)
+	if err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, sys_error.PlanetNotFoundErr):
+			respBody.PlanetNotFoundError()
+		case errors.Is(err, sys_error.PlanetEditChangedErr):
+			respBody.PlanetEditChangedError()
+		case errors.As(err, &dbErr):
+			respBody.DBError(dbErr)
+		default:
+			respBody.InternalError(err)
+		}
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	row := respPlanet.ListPlanetResp{
+		ID:    strconv.FormatInt(item.ID, 10),
+		Name:  item.Name,
+		Title: item.Title,
+		Intro: item.Intro,
+	}
+	respBody.Success(map[string]any{"planet": row})
+	c.JSON(http.StatusOK, respBody)
+}
+
 // List 本函数展示天体列表
 func List(c *gin.Context) {
 	respBody := &resp_body.RespBody{}

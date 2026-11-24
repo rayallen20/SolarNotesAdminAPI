@@ -1,12 +1,16 @@
 package model
 
 import (
-	"SolarNotesAdminAPI/db"
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
+
+	"SolarNotesAdminAPI/db"
 
 	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // PlanetNotFoundErr 本错误用于将数据库记录不存在转换为业务层可识别的错误
@@ -14,6 +18,9 @@ var PlanetNotFoundErr = errors.New("planet not found")
 
 // PlanetDuplicateKeyErr 表示插入触发唯一键冲突(唯一键可能来自 Name 或 ID,不能直接解释为 Name 已存在)
 var PlanetDuplicateKeyErr = errors.New("planet duplicate key")
+
+// PlanetEditChangedErr 表示被锁定记录中的标题或简介与原文不一致.
+var PlanetEditChangedErr = errors.New("planet edit snapshot has changed")
 
 // Planet 本结构体用于和数据库中的planet表进行映射
 type Planet struct {
@@ -105,6 +112,68 @@ func (p *Planet) Insert(ctx context.Context) error {
 		return errors.New("planet insert did not affect exactly one row")
 	}
 
+	return nil
+}
+
+// Update 锁定天体, 核对原文, 成功提交后将保存的记录回填到接收者.
+func (p *Planet) Update(ctx context.Context, expectedTitle, expectedIntro string) error {
+	if p == nil {
+		return errors.New("model.Planet.Update: nil receiver")
+	}
+	if ctx == nil {
+		return errors.New("model.Planet.Update: nil context")
+	}
+	if p.ID <= 0 {
+		return errors.New("model.Planet.Update: planet ID must be positive")
+	}
+	if db.DB == nil {
+		return errors.New("database is not initialized")
+	}
+
+	tx := db.DB.WithContext(ctx).Begin(&sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
+
+	var current Planet
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id", "name", "title", "intro").
+		Where("id = ?", p.ID).Take(&current).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return PlanetNotFoundErr
+	}
+	if err != nil {
+		return err
+	}
+	if current.Title != expectedTitle || current.Intro != expectedIntro {
+		return PlanetEditChangedErr
+	}
+
+	if current.Title != p.Title || current.Intro != p.Intro {
+		result := tx.Model(&current).Updates(map[string]any{
+			"title": p.Title,
+			"intro": p.Intro,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("planet %d edit affected %d rows", p.ID, result.RowsAffected)
+		}
+
+		// 在仍持有行锁的事务中读取实际保存的值.
+		err = tx.Select("id", "name", "title", "intro").Take(&current, p.ID).Error
+		if err != nil {
+			return err
+		}
+	}
+
+	err = tx.Commit().Error
+	if err != nil {
+		return err
+	}
+	*p = current
 	return nil
 }
 

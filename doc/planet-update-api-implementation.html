@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Solar Notes 管理后台天体编辑接口的请求与响应、原文校验、事务并发控制及联调用例。">
+  <title>编辑天体标题与简介 · Solar Notes API</title>
+  <style>
+    :root { color-scheme: light; --ink: #20342d; --muted: #495f55; --green: #205d47; --rule: #c9d8cd; --soft: #e8f1ea; --mono: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f8faf7; color: var(--ink); font: 16px/1.75 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .page { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 3.2rem; max-width: 76rem; margin: auto; padding: 2.8rem 2rem 5rem; }
+    aside { position: sticky; top: 2rem; align-self: start; }
+    nav { display: grid; border-left: 2px solid var(--rule); margin-top: .75rem; }
+    a { color: var(--green); text-underline-offset: .2em; } nav a { padding: .25rem .8rem; text-decoration: none; } nav a:hover { text-decoration: underline; }
+    :focus-visible { outline: 3px solid #2673a1; outline-offset: 3px; }
+    main { min-width: 0; } header { border-bottom: 1px solid var(--rule); padding-bottom: 1rem; }
+    .route { font: 650 .99rem/1.5 var(--mono); color: var(--green); }
+    h1 { margin: .55rem 0 1rem; font-size: clamp(2rem, 4vw, 3.05rem); line-height: 1.2; }
+    h2 { margin: 0 0 .6rem; font-size: 1.55rem; line-height: 1.35; }
+    section { margin-top: 2.5rem; scroll-margin-top: 1.25rem; }
+    p { margin: .5rem 0 .85rem; } header p, .source { color: var(--muted); }
+    figure { margin: 1rem 0; } figcaption { background: var(--soft); padding: .45rem .85rem; border-radius: .4rem .4rem 0 0; font-weight: 650; }
+    pre { margin: 0; background: #18372c; color: #f4f8f4; padding: .85rem 1rem; border-radius: 0 0 .4rem .4rem; overflow-x: auto; tab-size: 4; font: .87rem/1.65 var(--mono); } pre code { font: inherit; }
+    :not(pre) > code { background: var(--soft); border-radius: .2rem; padding: .08em .25em; font: .9em var(--mono); overflow-wrap: anywhere; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: .4rem; }
+    table { border-collapse: collapse; width: 100%; background: white; font-size: .95rem; }
+    th, td { padding: .55rem .75rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+    th { background: var(--soft); } tbody tr:last-child td { border-bottom: 0; }
+    @media (max-width: 52rem) { .page { display: block; padding: 1.2rem 1rem 3rem; } aside { position: static; margin-bottom: 1.5rem; } nav { display: flex; flex-wrap: wrap; gap: .2rem .9rem; border: 0; } nav a { padding: 0; } }
+    @media print { body { background: white; } .page { display: block; padding: 0; } aside { display: none; } pre { white-space: pre-wrap; overflow-wrap: anywhere; background: white; color: black; } .table-wrap { overflow: visible; } h2, figcaption { break-after: avoid; } tr { break-inside: avoid; } }
+    .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    .pair figure { min-width: 0; }
+    h3 { font-size: 1.1rem; margin: 1.4rem 0 .45rem; }
+    @media (max-width: 66rem) { .pair { display: block; } }
+    @media print { .pair { display: block; } }
+  </style>
+</head>
+<body>
+<div class="page">
+  <aside>
+    <strong>Solar Notes · 管理 API</strong>
+    <nav aria-label="文档目录">
+      <a href="#contract">请求与响应</a><a href="#binding">原文与目标校验</a>
+      <a href="#transaction">锁定并更新天体</a><a href="#entity">业务实体与错误</a>
+      <a href="#http">响应码与控制器</a><a href="#verify">联调与验收</a>
+    </nav>
+  </aside>
+  <main>
+    <header>
+      <div class="route">POST /v1/planet/update</div>
+      <h1>编辑天体标题与简介</h1>
+      <p>管理员从列表打开编辑抽屉，保存时提交天体 ID、打开抽屉时读到的原文，以及本次想保存的内容。服务端锁定该 ID 对应的一行，核对原文后更新标题和简介。成功响应可直接替换前端列表中的这一行。</p>
+      <p class="source"><a href="../../SolarNotesAdmin/doc/body-management-api-design.html#update">前后端编辑契约</a> · <a href="../../SolarNotesAdmin/doc/body-management-prototype.html">天体管理原型</a> · <a href="book-update-api-implementation.html">现有书籍编辑实现文档</a></p>
+    </header>
+
+    <section id="contract">
+      <h2>请求与响应</h2>
+      <p>沿用管理员鉴权，携带 <code>Authorization: Bearer &lt;access_token&gt;</code>，请求体为 <code>application/json</code>。下面用只改标题的场景说明两个对象的用途。简介仍随 <code>expected</code> 和 <code>target</code> 一起提交；目标标题的首尾空格在保存前去除。</p>
+      <div class="pair">
+      <figure><figcaption>请求 · 只改标题</figcaption><pre><code id="request-json" data-lang="json">{
+  "planet": {
+    "id": "2123435429930733568",
+    "expected": {
+      "title": "太阳系的中心",
+      "intro": "太阳是太阳系中唯一的恒星"
+    },
+    "target": {
+      "title": "  认识太阳  ",
+      "intro": "太阳是太阳系中唯一的恒星"
+    }
+  }
+}</code></pre></figure>
+      <figure><figcaption>成功 · HTTP 200</figcaption><pre><code id="success-json" data-lang="json">{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "planet": {
+      "id": "2123435429930733568",
+      "name": "Sun",
+      "title": "认识太阳",
+      "intro": "太阳是太阳系中唯一的恒星"
+    }
+  }
+}</code></pre></figure>
+      </div>
+      <p><code>planet.id</code> 使用正 <code>int64</code> 范围内的十进制字符串。响应中的 <code>id</code> 和 <code>name</code> 取自已保存的记录。编辑同样适用于列表中的历史天体，如 <code>Pluto</code>。请求只声明可编辑的两项，模型的写入白名单也只含 <code>title</code> 和 <code>intro</code>。</p>
+    </section>
+
+    <section id="binding">
+      <h2>分别定义原文与目标值的校验</h2>
+      <div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">Go 绑定与校验语义</th></tr></thead><tbody>
+        <tr><td><code>planet</code>、<code>expected</code>、<code>target</code></td><td>三个必填对象。即使只修改标题或简介，也要提交两项原文和两项目标值。</td></tr>
+        <tr><td><code>planet.id</code></td><td>用 <code>json:"id,string"</code> 解码，再用 <code>gt=0</code> 校验。裸 JSON 数字、空串、非整数、负数、零及超出 int64 上限的值均返回 <code>10101</code>。</td></tr>
+        <tr><td><code>expected.title</code>、<code>expected.intro</code></td><td>用 <code>*string</code> 区分缺失或 <code>null</code> 与显式空串。两项都必须是字符串；原样保留历史空串、首尾空白和超出新上限的旧值，供数据库原文比较。</td></tr>
+        <tr><td><code>target.title</code>、<code>target.intro</code></td><td>在 JSON 解码时用 <code>jstext.TrimSpace</code> 修剪，再由 Gin 校验。标题接受 1–20 个 Unicode 码点，简介接受 1–150 个；纯空白、缺失、<code>null</code> 和非字符串返回 <code>10101</code>。内部空白和换行保留。</td></tr>
+      </tbody></table></div>
+      <p>例如历史标题为 <code>" Sun "</code>，前端原样放进 <code>expected.title</code> 才能匹配。若把同一文本放进 <code>target.title</code>，落库值为 <code>"Sun"</code>。如果同一条记录的历史简介为空，管理员这次也要补齐目标简介，原文仍提交空串。<code>EditText</code> 仅用于两项目标值，修剪规则复用 <a href="../jstext/trim.go">jstext.TrimSpace</a>。</p>
+      <figure><figcaption>新增完整文件 · <code>param/req/v1/planet/update.go</code></figcaption><pre><code id="request" data-lang="go" data-mode="new" data-file="param/req/v1/planet/update.go">package planet
+
+import (
+	"SolarNotesAdminAPI/jstext"
+	"encoding/json"
+)
+
+// UpdateReq 定义天体编辑请求.
+type UpdateReq struct {
+	Planet *UpdatePlanetReq `json:"planet" binding:"required"` // Planet 包含记录 ID, 原文和目标值.
+}
+
+// UpdatePlanetReq 用 ID 定位天体, 同时提交两个可编辑字段的原值和目标值.
+type UpdatePlanetReq struct {
+	ID       int64                 `json:"id,string" binding:"gt=0"`    // ID 接收十进制字符串.
+	Expected *ExpectedPlanetFields `json:"expected" binding:"required"` // Expected 保存抽屉打开时的原文.
+	Target   *TargetPlanetFields   `json:"target" binding:"required"`   // Target 保存本次提交的完整内容.
+}
+
+// ExpectedPlanetFields 使用指针区分历史空串和缺失字段.
+type ExpectedPlanetFields struct {
+	Title *string `json:"title" binding:"required"` // Title 保留原始标题及首尾空白.
+	Intro *string `json:"intro" binding:"required"` // Intro 保留原始简介及首尾空白.
+}
+
+// TargetPlanetFields 在 JSON 绑定时修剪文本, 然后校验长度.
+type TargetPlanetFields struct {
+	Title EditText `json:"title" binding:"required,max=20"`  // Title 接受 1 至 20 个码点.
+	Intro EditText `json:"intro" binding:"required,max=150"` // Intro 接受 1 至 150 个码点.
+}
+
+// EditText 表示天体编辑请求中已修剪的目标文本.
+type EditText string
+
+// UnmarshalJSON 使用与页面 String.prototype.trim 相同的首尾空白规则.
+func (t *EditText) UnmarshalJSON(data []byte) error {
+	var value string
+	err := json.Unmarshal(data, &amp;value)
+	if err != nil {
+		return err
+	}
+	*t = EditText(jstext.TrimSpace(value))
+	return nil
+}</code></pre></figure>
+    </section>
+
+    <section id="transaction">
+      <h2>在同一个事务中锁定、比对和更新</h2>
+      <p>为 <code>model.Planet</code> 增加 <code>Update(ctx, expectedTitle, expectedIntro)</code>。接收者携带主键和修剪后的目标值。沿用书籍编辑的 <code>READ COMMITTED</code> 事务和 <code>SELECT ... FOR UPDATE</code>：按主键取得最新记录，行锁持续到提交或回滚。方法只访问 <code>planet</code> 表，现有主键即可定位，数据库无需增加字段或索引。</p>
+      <div class="table-wrap"><table><thead><tr><th scope="col">按此顺序判断</th><th scope="col">操作与结果</th></tr></thead><tbody>
+        <tr><td>按 ID 查无记录</td><td>返回现有 <code>model.PlanetNotFoundErr</code>，业务码 <code>20102</code>。</td></tr>
+        <tr><td>任一原文与锁定记录不符</td><td>返回 <code>20103</code>。即使另一个管理员已保存完全相同的目标，也要先报告快照失效。</td></tr>
+        <tr><td>原文匹配，两个目标值均等于当前值</td><td>跳过 SQL UPDATE，提交只做了锁定读取的事务，成功返回该行。</td></tr>
+        <tr><td>原文匹配，至少一个目标值有变化</td><td>只更新这行的标题和简介，在事务内回读保存结果；提交成功后才回填接收者。执行或提交出错沿用数据库错误处理。</td></tr>
+      </tbody></table></div>
+      <p>在 Go 中用字符串 <code>!=</code> 逐字节比较原文，大小写、尾随空格和 Unicode 组合形式的差异都能识别。两位管理员分别改标题和简介时，后取得锁的一方也必须核对两个原值。这里检查的是这两项的当前值；若期间曾修改又恢复为相同原文，本契约允许保存。</p>
+      <p>追加到 <a href="../model/planet.go">model/planet.go</a>，并在已有 import 块中加入 <code>"database/sql"</code>、<code>"fmt"</code> 和 <code>"gorm.io/gorm/clause"</code>。其余依赖及 <code>PlanetNotFoundErr</code> 已在当前文件中定义或导入。</p>
+      <figure><figcaption>新增错误和模型方法 · <code>model/planet.go</code></figcaption><pre><code id="model" data-lang="go" data-mode="append" data-file="model/planet.go">// PlanetEditChangedErr 表示被锁定记录中的标题或简介与原文不一致.
+var PlanetEditChangedErr = errors.New("planet edit snapshot has changed")
+
+// Update 锁定天体, 核对原文, 成功提交后将保存的记录回填到接收者.
+func (p *Planet) Update(ctx context.Context, expectedTitle, expectedIntro string) error {
+	if p == nil {
+		return errors.New("model.Planet.Update: nil receiver")
+	}
+	if ctx == nil {
+		return errors.New("model.Planet.Update: nil context")
+	}
+	if p.ID &lt;= 0 {
+		return errors.New("model.Planet.Update: planet ID must be positive")
+	}
+	if db.DB == nil {
+		return errors.New("database is not initialized")
+	}
+
+	tx := db.DB.WithContext(ctx).Begin(&amp;sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
+
+	var current Planet
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id", "name", "title", "intro").
+		Where("id = ?", p.ID).Take(&amp;current).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return PlanetNotFoundErr
+	}
+	if err != nil {
+		return err
+	}
+	if current.Title != expectedTitle || current.Intro != expectedIntro {
+		return PlanetEditChangedErr
+	}
+
+	if current.Title != p.Title || current.Intro != p.Intro {
+		result := tx.Model(&amp;current).Updates(map[string]any{
+			"title": p.Title,
+			"intro": p.Intro,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("planet %d edit affected %d rows", p.ID, result.RowsAffected)
+		}
+
+		// 在仍持有行锁的事务中读取实际保存的值.
+		err = tx.Select("id", "name", "title", "intro").Take(&amp;current, p.ID).Error
+		if err != nil {
+			return err
+		}
+	}
+
+	err = tx.Commit().Error
+	if err != nil {
+		return err
+	}
+	*p = current
+	return nil
+}</code></pre></figure>
+    </section>
+
+    <section id="entity">
+      <h2>业务层接收完整请求并回填天体</h2>
+      <p>在 <a href="../sys_error/planet_error.go">sys_error/planet_error.go</a> 中保留创建接口现有的 <code>PlanetExistErr</code>，新增下面的两个错误。模型层的错误供业务层用 <code>errors.Is</code> 识别；这里的错误由控制器转换成页面能处理的响应。</p>
+      <figure><figcaption>追加业务错误 · <code>sys_error/planet_error.go</code></figcaption><pre><code id="errors" data-lang="go" data-mode="append" data-file="sys_error/planet_error.go">var (
+	// PlanetNotFoundErr 表示正在编辑的天体已不存在.
+	PlanetNotFoundErr = errors.New("所选天体不存在,请刷新天体列表")
+
+	// PlanetEditChangedErr 表示有管理员已修改了快照中的标题或简介.
+	PlanetEditChangedErr = errors.New("天体标题或简介已变化,请刷新后重新确认")
+)</code></pre></figure>
+      <p>在 <a href="../biz/planet.go">biz/planet.go</a> 中追加以下方法，沿用该文件的导入。控制器完成绑定校验后传入整个请求；业务层检查需要解引用的指针，区分记录缺失、编辑冲突和数据库故障。模型提交成功后复用 <code>fillByORM()</code>，并设置 <code>Exist</code>，使控制器可从同一个业务实例取出完整记录。</p>
+      <figure><figcaption>追加业务方法 · <code>biz/planet.go</code></figcaption><pre><code id="business" data-lang="go" data-mode="append" data-file="biz/planet.go">// Update 核对请求中的原文并保存天体, 提交成功后才填充业务实体.
+func (p *Planet) Update(ctx context.Context, req *planet.UpdateReq) error {
+	if p == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Planet.Update: nil receiver")}
+	}
+	if ctx == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Planet.Update: nil context")}
+	}
+	if req == nil || req.Planet == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Planet.Update: missing planet request")}
+	}
+	input := req.Planet
+	if input.Expected == nil || input.Expected.Title == nil || input.Expected.Intro == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Planet.Update: missing expected title or intro")}
+	}
+	if input.Target == nil {
+		return &amp;sys_error.InternalError{Cause: errors.New("biz.Planet.Update: missing target fields")}
+	}
+
+	record := &amp;model.Planet{
+		ID:    input.ID,
+		Title: string(input.Target.Title),
+		Intro: string(input.Target.Intro),
+	}
+	err := record.Update(ctx, *input.Expected.Title, *input.Expected.Intro)
+	if err != nil {
+		switch {
+		case errors.Is(err, model.PlanetNotFoundErr):
+			return sys_error.PlanetNotFoundErr
+		case errors.Is(err, model.PlanetEditChangedErr):
+			return sys_error.PlanetEditChangedErr
+		default:
+			return &amp;sys_error.DatabaseError{Cause: err}
+		}
+	}
+
+	p.fillByORM(ctx, record)
+	p.Exist = true
+	return nil
+}</code></pre></figure>
+    </section>
+
+    <section id="http">
+      <h2>共用缺失码，返回列表单行</h2>
+      <p>在 <a href="../resp_body/resp_body.go">resp_body/resp_body.go</a> 的现有 <code>const</code> 块中，用以下三行替换原来的 <code>BookPlanetNotFoundCode = 20102</code> 声明。<code>20102</code> 统一表示天体缺失，书籍接口仍能使用原常量、响应方法和提示“请刷新天体选项”。天体编辑使用自己的恢复提示“请刷新天体列表”。</p>
+      <figure><figcaption>替换原常量声明 · <code>resp_body/resp_body.go</code></figcaption><pre><code id="codes" data-lang="go" data-mode="replace-constant" data-file="resp_body/resp_body.go">PlanetNotFoundCode     = 20102              // PlanetNotFoundCode 用于表示所选天体已不存在.
+BookPlanetNotFoundCode = PlanetNotFoundCode // BookPlanetNotFoundCode 沿用书籍接口使用的名称.
+PlanetEditChangedCode  = 20103              // PlanetEditChangedCode 表示天体编辑快照失效.</code></pre></figure>
+      <figure><figcaption>追加响应方法 · <code>resp_body/resp_body.go</code></figcaption><pre><code id="response-errors" data-lang="go" data-mode="append" data-file="resp_body/resp_body.go">// PlanetNotFoundError 返回天体编辑页面使用的缺失提示.
+func (r *RespBody) PlanetNotFoundError() {
+	r.failure(PlanetNotFoundCode, sys_error.PlanetNotFoundErr.Error())
+}
+
+// PlanetEditChangedError 返回编辑冲突, 由页面保留草稿并重新读取原文.
+func (r *RespBody) PlanetEditChangedError() {
+	r.failure(PlanetEditChangedCode, sys_error.PlanetEditChangedErr.Error())
+}</code></pre></figure>
+      <p>在 <a href="../controller/v1/planet/planet.go">controller/v1/planet/planet.go</a> 的现有导入下追加控制器。成功时按 <code>RespBody.Success(map[string]any)</code> 的约定传入 <code>"planet"</code>，其值复用 <code>respPlanet.ListPlanetResp</code>，只包含列表单行已有的四个字段。<a href="../param/resp/v1/planet/list.go">现有响应 DTO</a></p>
+      <figure><figcaption>追加 Update · <code>controller/v1/planet/planet.go</code></figcaption><pre><code id="controller" data-lang="go" data-mode="append" data-file="controller/v1/planet/planet.go">// Update 绑定天体编辑请求, 返回与列表单行同形的已保存记录.
+func Update(c *gin.Context) {
+	req := &amp;planet.UpdateReq{}
+	respBody := &amp;resp_body.RespBody{}
+	err := c.ShouldBindJSON(req)
+	if err != nil {
+		respBody.ValidateError(err)
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	var item biz.Planet
+	err = item.Update(c.Request.Context(), req)
+	if err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, sys_error.PlanetNotFoundErr):
+			respBody.PlanetNotFoundError()
+		case errors.Is(err, sys_error.PlanetEditChangedErr):
+			respBody.PlanetEditChangedError()
+		case errors.As(err, &amp;dbErr):
+			respBody.DBError(dbErr)
+		default:
+			respBody.InternalError(err)
+		}
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	row := respPlanet.ListPlanetResp{
+		ID:    strconv.FormatInt(item.ID, 10),
+		Name:  item.Name,
+		Title: item.Title,
+		Intro: item.Intro,
+	}
+	respBody.Success(map[string]any{"planet": row})
+	c.JSON(http.StatusOK, respBody)
+}</code></pre></figure>
+      <p>将以下注册语句放在 <a href="../main.go">main.go</a> 的 <code>newRouter()</code> 中，紧邻 <code>v1.GET("/planet/list", planet.List)</code>。路由自动经过全局管理员鉴权和请求体大小限制。</p>
+      <figure><figcaption>注册在既有 v1 路由组 · <code>main.go</code></figcaption><pre><code id="route" data-lang="go" data-mode="after-list" data-file="main.go">v1.POST("/planet/update", planet.Update)</code></pre></figure>
+    </section>
+
+    <section id="verify">
+      <h2>联调与验收</h2>
+      <p>在 Postman 的 Authorization 中选择 Bearer Token，使用已登录管理员的令牌。先调用 <code>GET /v1/planet/list</code> 取得测试记录，原样复制两项原文及字符串 ID，再将第一个示例作为 JSON 请求体提交。项目用 HTTP 200 承载业务结果，页面以响应体的 <code>code</code> 决定如何处理。</p>
+      <figure><figcaption>编辑快照过期时的完整响应</figcaption><pre><code id="conflict-json" data-lang="json">{
+  "code": 20103,
+  "message": "天体标题或简介已变化,请刷新后重新确认",
+  "data": {}
+}</code></pre></figure>
+      <div class="table-wrap"><table><thead><tr><th scope="col">场景</th><th scope="col">核验要点</th></tr></thead><tbody>
+        <tr><td>只改简介，然后编辑一条历史名称记录</td><td>返回 200，以 ID 替换对应列表项；标题与简介取已保存值，ID 和 name 保留。编辑历史名称同样成功。成功后无需复检天体创建状态。</td></tr>
+        <tr><td>目标含首尾空格、换行或 BOM；再试纯空白及长度边界</td><td>先修剪再计数。20 个码点的标题和 150 个码点的简介可保存；分别多一个或修剪后为空返回 10101。可用非 BMP 字符验证每个 Unicode 码点计一项。</td></tr>
+        <tr><td>原文带空白、是历史空串，或超过新长度上限</td><td>精确提交原文并给出合法目标可以修正历史数据。删掉原文的空格会得到 20103。省略原文字段、传 null、传非字符串或传裸数字 ID 返回 10101。</td></tr>
+        <tr><td>原文匹配，目标修剪后与原值相同</td><td>返回 200 及完整的当前行。观察事务仅锁定读取和提交，跳过 UPDATE。</td></tr>
+        <tr><td>两人从同一份原文分别修改标题、简介；或两人提交相同的新目标</td><td>先提交的更改成功，另一方返回 20103。前端保留草稿，重读列表，经管理员核对后使用新快照再提交。</td></tr>
+        <tr><td>有效的正整数 ID 对应的记录已不存在</td><td>返回 20102 和空 data；关闭失效记录的编辑抽屉，刷新 list 与 status。书籍接口引用缺失天体时原业务码和提示依旧可用。</td></tr>
+        <tr><td>请求夹带 name，或天体已关联书籍</td><td>用合法请求其余字段保存后，核对返回和库中 name 与编辑前一致；书籍的 planet_id 保持相同。</td></tr>
+        <tr><td>鉴权失败、数据库操作失败或客户端等待响应超时</td><td>过期令牌走 20003，无效令牌走 20004；数据库错误走 10201，内部错误走 500，错误 data 均为 {}。写请求超时后先重读列表核对是否已保存，再决定是否重新提交。</td></tr>
+      </tbody></table></div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

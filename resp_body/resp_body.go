@@ -27,10 +27,13 @@ const (
 
 	PlanetExistCode = 20101 // PlanetExistCode 请求创建的天体名称已经存在状态码
 
-	BookPlanetNotFoundCode = 20102 // BookPlanetNotFoundCode 天体引用失效状态码
-	BookNotFoundCode       = 20202 // BookNotFoundCode 表示书籍已不存在, 前端可重新获取书籍选项
-	BookOrderChangedCode   = 20203 // BookOrderChangedCode 表示该天体的书单或阅读顺序已变化.
-	BookEditChangedCode    = 20204 // BookEditChangedCode 表示书籍的编辑快照已失效.
+	PlanetNotFoundCode     = 20102              // PlanetNotFoundCode 用于表示所选天体已不存在.
+	BookPlanetNotFoundCode = PlanetNotFoundCode // BookPlanetNotFoundCode 沿用书籍接口使用的名称.
+	PlanetEditChangedCode  = 20103              // PlanetEditChangedCode 表示天体编辑快照失效.
+
+	BookNotFoundCode     = 20202 // BookNotFoundCode 表示书籍已不存在, 前端可重新获取书籍选项
+	BookOrderChangedCode = 20203 // BookOrderChangedCode 表示该天体的书单或阅读顺序已变化.
+	BookEditChangedCode  = 20204 // BookEditChangedCode 表示书籍的编辑快照已失效.
 )
 
 type RespBody struct {
@@ -107,6 +110,16 @@ func (r *RespBody) InvalidToken() {
 // PlanetExistError 本方法用于生成天体名称重复时的响应体
 func (r *RespBody) PlanetExistError() {
 	r.failure(PlanetExistCode, "请求创建的天体已存在,无法创建")
+}
+
+// PlanetNotFoundError 返回天体编辑页面使用的缺失提示.
+func (r *RespBody) PlanetNotFoundError() {
+	r.failure(PlanetNotFoundCode, sys_error.PlanetNotFoundErr.Error())
+}
+
+// PlanetEditChangedError 返回编辑冲突, 由页面保留草稿并重新读取原文.
+func (r *RespBody) PlanetEditChangedError() {
+	r.failure(PlanetEditChangedCode, sys_error.PlanetEditChangedErr.Error())
 }
 
 // BookPlanetNotFoundError 本方法用于生成天体引用失效时的响应体
