@@ -22,6 +22,12 @@ var BookNotFoundErr = errors.New("book not found")
 // BookEditChangedErr 表示锁定记录的标题或显隐与编辑快照不一致.
 var BookEditChangedErr = errors.New("book edit snapshot has changed")
 
+// BookOrderInputErr 表示提交的两个序列无法构成同一组正 ID 的排列.
+var BookOrderInputErr = errors.New("invalid book order permutation")
+
+// BookOrderChangedErr 表示锁内读取的成员或顺序与快照不同.
+var BookOrderChangedErr = errors.New("book order snapshot has changed")
+
 // Book 本结构体用于映射 book 表,只包含本次创建书籍所需的字段.
 type Book struct {
 	ID            int64   `gorm:"column:id;primaryKey;autoIncrement:false"` // ID 书籍ID
@@ -178,6 +184,146 @@ func (b *Book) Update(ctx context.Context, expectedTitle, expectedDisplayStatus 
 		return err
 	}
 	*b = current
+	return nil
+}
+
+// Reorder 锁定天体及其完整书单, 成功提交后返回按目标次序排列的书籍.
+func (b *Book) Reorder(ctx context.Context, planetID int64, expected, target []int64) ([]Book, error) {
+	if b == nil || ctx == nil {
+		return nil, errors.New("model.Book.Reorder: missing book model or context")
+	}
+	if planetID <= 0 {
+		return nil, BookOrderInputErr
+	}
+	err := validateBookOrder(expected, target)
+	if err != nil {
+		return nil, err
+	}
+	if db.DB == nil {
+		return nil, errors.New("database is not initialized")
+	}
+	tx := db.DB.WithContext(ctx).Begin(&sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+	defer tx.Rollback()
+
+	lock := clause.Locking{Strength: "UPDATE"}
+	var planet Planet
+	err = tx.Clauses(lock).Select("id").Where("id = ?", planetID).Take(&planet).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, PlanetNotFoundErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	var current []Book
+	err = tx.Clauses(lock).Select("id", "planet_id", "title", "sort", "display_status").
+		Where("planet_id = ?", planetID).Order("sort ASC").Order("id ASC").Find(&current).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(current) != len(expected) {
+		return nil, BookOrderChangedErr
+	}
+	for i := range current {
+		if current[i].ID != expected[i] {
+			return nil, BookOrderChangedErr
+		}
+	}
+
+	ordered, err := b.applyOrder(tx, current, target)
+	if err != nil {
+		return nil, err
+	}
+	err = tx.Commit().Error
+	if err != nil {
+		return nil, err
+	}
+	return ordered, nil
+}
+
+// validateBookOrder 校验两份输入之间的关系, 在进入事务前完成.
+func validateBookOrder(expected, target []int64) error {
+	if expected == nil || target == nil || len(expected) != len(target) || uint64(len(target)) > math.MaxUint32 {
+		return BookOrderInputErr
+	}
+	remaining := make(map[int64]struct{}, len(expected))
+	for _, id := range expected {
+		if id <= 0 {
+			return BookOrderInputErr
+		}
+		if _, exists := remaining[id]; exists {
+			return BookOrderInputErr
+		}
+		remaining[id] = struct{}{}
+	}
+	for _, id := range target {
+		if _, exists := remaining[id]; !exists {
+			return BookOrderInputErr
+		}
+		delete(remaining, id)
+	}
+	return nil
+}
+
+// applyOrder 把已验证的完整排列写成 1..N, 仅在持有全部书籍行锁时调用.
+func (b *Book) applyOrder(tx *gorm.DB, current []Book, target []int64) ([]Book, error) {
+	byID := make(map[int64]*Book, len(current))
+	occupied := make(map[uint32]*Book, len(current))
+	for i := range current {
+		row := &current[i]
+		byID[row.ID] = row
+		occupied[row.Sort] = row
+	}
+
+	// 优先找空闲正序号. 所有正序号均已占用时, 已验证的行数上限保证 0 空闲.
+	var candidate uint64 = 1
+	for candidate <= math.MaxUint32 && occupied[uint32(candidate)] != nil {
+		candidate++
+	}
+	var free uint32
+	if candidate <= math.MaxUint32 {
+		free = uint32(candidate)
+	}
+
+	ordered := make([]Book, len(target))
+	for i, id := range target {
+		book := byID[id]
+		position := uint32(i) + 1
+		if book.Sort != position {
+			if occupant := occupied[position]; occupant != nil {
+				err := occupant.moveSort(tx, occupied, free)
+				if err != nil {
+					return nil, err
+				}
+			}
+			previous := book.Sort
+			err := book.moveSort(tx, occupied, position)
+			if err != nil {
+				return nil, err
+			}
+			free = previous
+		}
+		ordered[i] = *book
+	}
+	return ordered, nil
+}
+
+// moveSort 将一本书移入空位. SQL 成功后同步内存中的占位记录.
+func (b *Book) moveSort(tx *gorm.DB, occupied map[uint32]*Book, next uint32) error {
+	result := tx.Model(&Book{}).
+		Where("id = ? AND planet_id = ? AND sort = ?", b.ID, b.PlanetID, b.Sort).
+		UpdateColumn("sort", next)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("book %d move from %d to %d affected %d rows", b.ID, b.Sort, next, result.RowsAffected)
+	}
+	delete(occupied, b.Sort)
+	b.Sort = next
+	occupied[next] = b
 	return nil
 }
 

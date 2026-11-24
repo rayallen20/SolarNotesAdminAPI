@@ -146,6 +146,34 @@ func (b *Book) List(ctx context.Context, req *reqBook.ListReq) ([]*Book, int64, 
 	return books, total, page.TotalPages(total), nil
 }
 
+// Reorder 接收完整请求并返回提交后的书籍摘要.
+func (b *Book) Reorder(ctx context.Context, req *reqBook.ReorderReq) ([]Book, error) {
+	if b == nil || ctx == nil {
+		return nil, &sys_error.InternalError{Cause: errors.New("biz.Book.Reorder: missing receiver or context")}
+	}
+	if req == nil || req.Planet == nil {
+		return nil, &sys_error.InternalError{Cause: errors.New("biz.Book.Reorder: missing planet request")}
+	}
+
+	input := req.Planet
+	orm := &model.Book{}
+	rows, err := orm.Reorder(ctx, input.ID, input.Expected.IDs(), input.Target.IDs())
+	if err != nil {
+		switch {
+		case errors.Is(err, model.BookOrderInputErr):
+			return nil, sys_error.BookOrderInputErr
+		case errors.Is(err, model.PlanetNotFoundErr):
+			return nil, sys_error.BookPlanetNotFoundErr
+		case errors.Is(err, model.BookOrderChangedErr):
+			return nil, sys_error.BookOrderChangedErr
+		default:
+			return nil, &sys_error.DatabaseError{Cause: err}
+		}
+	}
+
+	return bookSummaries(rows), nil
+}
+
 // Options 本函数用于展示给定天体下的书籍选项,用于前端下拉选择
 func (b *Book) Options(ctx context.Context, req *reqBook.OptionsReq) ([]Book, error) {
 	if b == nil {
@@ -177,15 +205,19 @@ func (b *Book) Options(ctx context.Context, req *reqBook.OptionsReq) ([]Book, er
 		return nil, err
 	}
 
-	books := make([]Book, 0, len(records))
-	for _, record := range records {
-		books = append(books, Book{
+	return bookSummaries(records), nil
+}
+
+// bookSummaries 按模型查询或调序后的顺序填入书籍摘要.
+func bookSummaries(records []model.Book) []Book {
+	books := make([]Book, len(records))
+	for i, record := range records {
+		books[i] = Book{
 			ID:            record.ID,
 			Title:         record.Title,
 			Sort:          record.Sort,
 			DisplayStatus: record.DisplayStatus,
-		})
+		}
 	}
-
-	return books, nil
+	return books
 }

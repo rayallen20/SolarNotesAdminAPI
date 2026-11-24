@@ -150,6 +150,40 @@ func List(c *gin.Context) {
 	c.JSON(http.StatusOK, respBody)
 }
 
+// Reorder 保存书序, 并将提交后的整份书单装入现有响应包装器.
+func Reorder(c *gin.Context) {
+	req := &reqBook.ReorderReq{}
+	respBody := &resp_body.RespBody{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		respBody.ValidateError(err)
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	var book biz.Book
+	items, err := book.Reorder(c.Request.Context(), req)
+	if err != nil {
+		var dbErr *sys_error.DatabaseError
+		switch {
+		case errors.Is(err, sys_error.BookOrderInputErr):
+			respBody.ValidateError(err)
+		case errors.Is(err, sys_error.BookPlanetNotFoundErr):
+			respBody.BookPlanetNotFoundError()
+		case errors.Is(err, sys_error.BookOrderChangedErr):
+			respBody.BookOrderChangedError()
+		case errors.As(err, &dbErr):
+			respBody.DBError(dbErr)
+		default:
+			respBody.InternalError(err)
+		}
+		c.JSON(http.StatusOK, respBody)
+		return
+	}
+
+	respBody.Success(map[string]any{"books": bookOptionResponses(items)})
+	c.JSON(http.StatusOK, respBody)
+}
+
 // Options 本函数用于展示给定天体下的书籍选项
 func Options(c *gin.Context) {
 	req := &reqBook.OptionsReq{}
@@ -176,19 +210,20 @@ func Options(c *gin.Context) {
 		return
 	}
 
-	options := make([]respBook.OptionResp, 0, len(books))
-	for _, item := range books {
-		options = append(options, respBook.OptionResp{
+	respBody.Success(map[string]any{"books": bookOptionResponses(books)})
+	c.JSON(http.StatusOK, respBody)
+}
+
+// bookOptionResponses 保留书单顺序, 使空书单序列化为 [].
+func bookOptionResponses(books []biz.Book) []respBook.OptionResp {
+	options := make([]respBook.OptionResp, len(books))
+	for i, item := range books {
+		options[i] = respBook.OptionResp{
 			ID:            strconv.FormatInt(item.ID, 10),
 			Title:         item.Title,
 			Sort:          item.Sort,
 			DisplayStatus: item.DisplayStatus,
-		})
+		}
 	}
-
-	data := map[string]any{
-		"books": options,
-	}
-	respBody.Success(data)
-	c.JSON(http.StatusOK, respBody)
+	return options
 }

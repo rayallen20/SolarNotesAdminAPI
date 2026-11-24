@@ -29,6 +29,7 @@ const (
 
 	BookPlanetNotFoundCode = 20102 // BookPlanetNotFoundCode 天体引用失效状态码
 	BookNotFoundCode       = 20202 // BookNotFoundCode 表示书籍已不存在, 前端可重新获取书籍选项
+	BookOrderChangedCode   = 20203 // BookOrderChangedCode 表示该天体的书单或阅读顺序已变化.
 	BookEditChangedCode    = 20204 // BookEditChangedCode 表示书籍的编辑快照已失效.
 )
 
@@ -116,6 +117,11 @@ func (r *RespBody) BookPlanetNotFoundError() {
 // BookNotFoundError 将书籍不存在映射为统一业务响应.
 func (r *RespBody) BookNotFoundError() {
 	r.failure(BookNotFoundCode, sys_error.BookNotFoundErr.Error())
+}
+
+// BookOrderChangedError 返回书序冲突响应.
+func (r *RespBody) BookOrderChangedError() {
+	r.failure(BookOrderChangedCode, sys_error.BookOrderChangedErr.Error())
 }
 
 // BookEditChangedError 返回书籍编辑冲突以及空的 data 对象.
